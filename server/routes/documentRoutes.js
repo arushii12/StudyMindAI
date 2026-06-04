@@ -5,6 +5,7 @@ import {
   listDocuments,
   moveDocument,
   moveDocuments,
+  renameDocument,
   uploadDocument,
   viewDocumentPdf
 } from "../controllers/documentController.js";
@@ -24,6 +25,7 @@ router.post(
   uploadDocument
 );
 router.get("/:id/pdf", attachCurrentUser, viewDocumentPdf);
+router.patch("/:id/rename", attachCurrentUser, renameDocument);
 router.patch("/:id/move", attachCurrentUser, moveDocument);
 router.delete("/:id", attachCurrentUser, deleteDocument);
 

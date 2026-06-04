@@ -1,4 +1,5 @@
 import {
+  deleteFlashcardSetForUser,
   generateFlashcardsForUser,
   getFlashcardProgressForUser,
   getFlashcardsForUser,
@@ -38,6 +39,15 @@ export async function getFlashcardProgress(req, res, next) {
   try {
     const progress = await getFlashcardProgressForUser(req.user, req.params.id);
     res.json(progress);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteFlashcardSet(req, res, next) {
+  try {
+    const result = await deleteFlashcardSetForUser(req.user, req.params.id);
+    res.json(result);
   } catch (error) {
     next(error);
   }

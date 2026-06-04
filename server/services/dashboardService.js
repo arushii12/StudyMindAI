@@ -1,12 +1,17 @@
+import fs from "fs";
+import path from "path";
 import Document from "../models/Document.js";
 import QuizAttempt from "../models/QuizAttempt.js";
 import Flashcard from "../models/Flashcard.js";
 import DailyGoal from "../models/DailyGoal.js";
+import HiddenContinueLearningItem from "../models/HiddenContinueLearningItem.js";
 import StudyActivity from "../models/StudyActivity.js";
+import Summary from "../models/Summary.js";
 import { isDatabaseConnected } from "../config/db.js";
 import mongoose from "mongoose";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const UPLOADS_DIR = path.resolve(process.cwd(), "server/uploads");
 
 export async function updateDailyGoalForUser(user, payload = {}) {
   if (!user?.id || !isDatabaseConnected()) {
@@ -69,6 +74,37 @@ export async function recordStudyActivityForUser(user, payload = {}) {
   return { activity: mapActivity(activity) };
 }
 
+export async function hideContinueLearningItemForUser(user, payload = {}) {
+  if (!user?.id || !isDatabaseConnected()) {
+    const error = new Error("MongoDB is not connected. Continue Learning preferences require persistence.");
+    error.status = 503;
+    throw error;
+  }
+
+  const subject = String(payload.subject || "").replace(/\s+/g, " ").trim();
+
+  if (!subject) {
+    const error = new Error("Continue Learning item is missing.");
+    error.status = 400;
+    throw error;
+  }
+
+  await HiddenContinueLearningItem.findOneAndUpdate(
+    { userId: user.id, subject },
+    {
+      userId: user.id,
+      subject,
+      hiddenAt: new Date()
+    },
+    { upsert: true, setDefaultsOnInsert: true }
+  );
+
+  return {
+    hiddenSubject: subject,
+    message: "Removed from Continue Learning."
+  };
+}
+
 export async function getDashboardData(user) {
   if (!user?.id || !isDatabaseConnected()) {
     return emptyDashboard(user);
@@ -89,11 +125,13 @@ export async function getDashboardData(user) {
     topicPerformance,
     recentAttempts,
     subjectActivity,
+    summaryActivity,
     flashcardActivity,
+    hiddenContinueLearningItems,
     quizActivityDays,
     studyActivityDays
   ] = await Promise.all([
-    Document.countDocuments({ userId: user.id }),
+    countStoredPdfDocuments(user.id),
     QuizAttempt.aggregate([
       { $match: { userId: userObjectId(user.id) } },
       { $sort: { completedAt: 1 } },
@@ -215,15 +253,33 @@ export async function getDashboardData(user) {
           readyDocuments: {
             $sum: { $cond: [{ $eq: ["$status", "ready"] }, 1, 0] }
           },
-          summaries: {
-            $sum: { $cond: ["$summaryGenerated", 1, 0] }
-          },
-          lastStudiedAt: { $max: { $literal: null } },
-          latestUploadAt: { $max: { $ifNull: ["$uploadDate", "$createdAt"] } }
+          lastOpenedAt: { $max: "$lastStudiedAt" },
+          latestUploadAt: { $max: { $ifNull: ["$uploadDate", "$createdAt"] } },
+          latestDocumentActivityAt: { $max: "$lastStudiedAt" }
         }
       },
-      { $sort: { lastStudiedAt: -1, latestUploadAt: -1 } },
-      { $limit: 8 }
+      { $sort: { latestDocumentActivityAt: -1 } },
+      { $limit: 12 }
+    ]),
+    Summary.aggregate([
+      { $match: { userId: userObjectId(user.id) } },
+      {
+        $lookup: {
+          from: "documents",
+          localField: "documentId",
+          foreignField: "_id",
+          as: "document"
+        }
+      },
+      { $unwind: "$document" },
+      {
+        $group: {
+          _id: "$document.subject",
+          documentId: { $last: "$documentId" },
+          summaries: { $sum: 1 },
+          lastGeneratedAt: { $max: { $ifNull: ["$generatedAt", "$updatedAt"] } }
+        }
+      }
     ]),
     Flashcard.aggregate([
       { $match: { userId: userObjectId(user.id) } },
@@ -241,6 +297,7 @@ export async function getDashboardData(user) {
         }
       }
     ]),
+    HiddenContinueLearningItem.find({ userId: user.id }).select("subject").lean(),
     QuizAttempt.aggregate([
       {
         $match: {
@@ -295,8 +352,8 @@ export async function getDashboardData(user) {
       chartData
     },
     goal,
-    insights: buildInsights(topicPerformance, recentAttempts, studyStreak, subjectActivity),
-    continueLearning: buildContinueLearning(subjectActivity, topicPerformance, flashcardActivity),
+    insights: buildInsights(topicPerformance, recentAttempts, studyStreak, subjectActivity, goal, documentsUploaded, chartData),
+    continueLearning: buildContinueLearning(subjectActivity, summaryActivity, topicPerformance, flashcardActivity, hiddenContinueLearningItems),
     meta: {
       hasData: documentsUploaded > 0 || (summary.attempts || 0) > 0 || flashcardActivity.length > 0 || studyHistory.length > 0,
       generatedAt: new Date().toISOString()
@@ -306,6 +363,30 @@ export async function getDashboardData(user) {
 
 function userObjectId(id) {
   return mongoose.Types.ObjectId.createFromHexString(id);
+}
+
+async function countStoredPdfDocuments(userId) {
+  const documents = await Document.find({
+    userId,
+    fileType: "pdf",
+    status: { $ne: "archived" }
+  })
+    .select("filePath storedFileName")
+    .lean();
+
+  return documents.filter(hasStoredPdfFile).length;
+}
+
+function hasStoredPdfFile(document) {
+  if (document.filePath && fs.existsSync(document.filePath)) {
+    return true;
+  }
+
+  if (document.storedFileName) {
+    return fs.existsSync(path.join(UPLOADS_DIR, document.storedFileName));
+  }
+
+  return false;
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -338,6 +419,7 @@ function mapActivity(activity) {
 
 function mapGoal(goal) {
   return {
+    hasGoal: Boolean(goal),
     type: goal?.type || "studyTime",
     targetMinutes: goal?.targetMinutes || 60,
     targetQuizzes: goal?.targetQuizzes || 3
@@ -353,6 +435,15 @@ function buildGoalPayload(goal, today = {}) {
 }
 
 function emptyDashboard(user) {
+  const goal = {
+    hasGoal: false,
+    type: "studyTime",
+    targetMinutes: 60,
+    targetQuizzes: 3,
+    todayStudyMinutes: 0,
+    todayQuizAttempts: 0
+  };
+
   return {
     user: user || { id: null, name: "Alex Morgan", email: "alex@studymind.ai", avatarUrl: "" },
     stats: {
@@ -361,22 +452,16 @@ function emptyDashboard(user) {
       averageScore: 0,
       studyStreak: 0,
       trends: {
-        averageScore: { direction: "up", label: "+0% from last week", value: 0 },
-        studyStreak: { direction: "up", label: "+0 days from last week", value: 0 }
+        averageScore: buildKpiTrend(0, "%"),
+        studyStreak: buildKpiTrend(0, "days")
       }
     },
     progress: {
       rangeLabel: "This Month",
       chartData: []
     },
-    goal: {
-      type: "studyTime",
-      targetMinutes: 60,
-      targetQuizzes: 3,
-      todayStudyMinutes: 0,
-      todayQuizAttempts: 0
-    },
-    insights: [],
+    goal,
+    insights: buildInsights([], [], 0, [], goal, 0, []),
     continueLearning: [],
     meta: {
       hasData: false,
@@ -432,13 +517,12 @@ function calculateStudyStreak(activityDays) {
   return streak;
 }
 
-function buildInsights(topicPerformance, recentAttempts, studyStreak, subjectActivity) {
-  const insights = [];
-  const usedSubjects = new Set();
+function buildInsights(topicPerformance, recentAttempts, studyStreak, subjectActivity, goal, documentsUploaded, chartData) {
   const documentSubjects = subjectActivity.map((subject) => ({
     subject: subject._id,
     documentId: subject.documentId?.toString?.(),
-    lastStudiedAt: subject.lastStudiedAt
+    documents: subject.documents || 0,
+    summaries: subject.summaries || 0
   }));
   const lowest = [...topicPerformance].sort((a, b) => a.averageScore - b.averageScore)[0];
   const improving = findImprovingTopic(recentAttempts);
@@ -447,132 +531,230 @@ function buildInsights(topicPerformance, recentAttempts, studyStreak, subjectAct
     .filter((topic) => topic.averageScore >= 75)
     .sort((a, b) => b.averageScore - a.averageScore)[0];
   const mostStudied = [...topicPerformance].sort((a, b) => b.attempts - a.attempts)[0];
-  const inactive = [...documentSubjects]
-    .filter((subject) => daysSince(subject.lastStudiedAt) >= 3)
-    .sort((a, b) => daysSince(b.lastStudiedAt) - daysSince(a.lastStudiedAt))[0];
+  const weekActivity = summarizeRecentActivity(chartData, 7);
 
-  function addInsight(insight, subject) {
-    if (insights.length >= 3) {
-      return;
+  const positiveInsight = (() => {
+    if (studyStreak > 0) {
+      return {
+        type: "streak",
+        title: `You're on a ${studyStreak}-day streak.`,
+        detail: "Keep the momentum with one quick review today.",
+        href: "#flashcards"
+      };
     }
 
-    if (subject && usedSubjects.has(subject)) {
-      return;
+    if (improving) {
+      return {
+        type: "improving",
+        title: `${improving.topic} performance is improving.`,
+        detail: `Recent score improved by ${improving.delta} percentage points.`,
+        href: `#quizzes?topic=${encodeURIComponent(improving.topic)}`
+      };
     }
 
-    insights.push(insight);
-
-    if (subject) {
-      usedSubjects.add(subject);
+    if (strongest) {
+      return {
+        type: "improving",
+        title: `${strongest.subject} is your strongest subject.`,
+        detail: `Average quiz accuracy is ${Math.round(strongest.averageScore)}%.`,
+        href: `#quizzes?subject=${encodeURIComponent(strongest.subject)}`
+      };
     }
-  }
 
-  if (studyStreak > 0) {
-    addInsight({
+    if (goal?.hasGoal && isGoalComplete(goal)) {
+      return {
+        type: "streak",
+        title: "Goal achieved — keep the momentum going.",
+        detail: "Great work today.",
+        href: "#dashboard",
+        action: "dailyGoal"
+      };
+    }
+
+    if (documentsUploaded > 0) {
+      return {
+        type: "activity",
+        title: "Nice progress building your library.",
+        detail: `${documentsUploaded} document${documentsUploaded === 1 ? "" : "s"} currently stored.`,
+        href: "#library"
+      };
+    }
+
+    return {
       type: "streak",
-      title: `You're on a ${studyStreak}-day streak.`,
-      detail: "Keep the momentum with one quick review today.",
-      href: "#flashcards"
-    });
-  }
+      title: "Set up today's study plan.",
+      detail: "Add a daily goal or upload notes to start tracking progress.",
+      href: "#dashboard",
+      action: "dailyGoal"
+    };
+  })();
 
-  if (revision) {
-    addInsight({
+  const revisionInsight = (() => {
+    if (revision) {
+      return {
+        type: "revision",
+        title: `${revision._id} needs revision.`,
+        detail: `Average accuracy is ${Math.round(revision.averageScore)}% across ${revision.attempts} attempts.`,
+        href: `#quizzes?subject=${encodeURIComponent(revision.subject || revision._id)}`
+      };
+    }
+
+    if (lowest) {
+      return {
+        type: "focus",
+        title: `${lowest._id} is your lowest scoring topic.`,
+        detail: `Current average is ${Math.round(lowest.averageScore)}%.`,
+        href: `#quizzes?subject=${encodeURIComponent(lowest.subject || lowest._id)}`
+      };
+    }
+
+    const reviewSubject = documentSubjects.find((subject) => subject.summaries > 0) || documentSubjects[0];
+
+    if (reviewSubject) {
+      return {
+        type: "focus",
+        title: `${reviewSubject.subject} is ready for review.`,
+        detail: "Open your summary or try a short quiz.",
+        href: reviewSubject.documentId
+          ? `#summary?documentId=${reviewSubject.documentId}`
+          : `#summary?subject=${encodeURIComponent(reviewSubject.subject)}`
+      };
+    }
+
+    return {
       type: "revision",
-      title: `${revision._id} needs revision.`,
-      detail: `Average accuracy is ${Math.round(revision.averageScore)}% across ${revision.attempts} attempts.`,
-      href: `#quizzes?subject=${encodeURIComponent(revision.subject || revision._id)}`
-    }, revision.subject || revision._id);
-  } else if (lowest) {
-    addInsight({
-      type: "focus",
-      title: `${lowest._id} is your lowest scoring topic.`,
-      detail: `Current average is ${Math.round(lowest.averageScore)}%.`,
-      href: `#quizzes?subject=${encodeURIComponent(lowest.subject || lowest._id)}`
-    }, lowest.subject || lowest._id);
-  }
-
-  if (improving) {
-    addInsight({
-      type: "improving",
-      title: `${improving.topic} performance is improving.`,
-      detail: `Recent score improved by ${improving.delta} percentage points.`,
-      href: `#quizzes?topic=${encodeURIComponent(improving.topic)}`
-    }, improving.subject || improving.topic);
-  }
-
-  if (strongest) {
-    addInsight({
-      type: "improving",
-      title: `${strongest.subject} is your strongest subject.`,
-      detail: `Average quiz accuracy is ${Math.round(strongest.averageScore)}%.`,
-      href: `#quizzes?subject=${encodeURIComponent(strongest.subject)}`
-    }, strongest.subject);
-  }
-
-  if (!insights.some((insight) => ["streak", "improving"].includes(insight.type)) && (topicPerformance.length || documentSubjects.length)) {
-    addInsight({
-      type: "activity",
-      title: "Your study history is building.",
-      detail: "Keep adding quiz attempts to sharpen these insights.",
-      href: "#dashboard"
-    });
-  }
-
-  if (inactive) {
-    const inactiveDays = daysSince(inactive.lastStudiedAt);
-    addInsight({
-      type: "focus",
-      title: `${inactive.subject} has not been reviewed in ${inactiveDays} days.`,
-      detail: "Open the material for a quick refresh.",
-      href: inactive.documentId
-        ? `#summary?documentId=${inactive.documentId}`
-        : `#summary?subject=${encodeURIComponent(inactive.subject)}`
-    }, inactive.subject);
-  }
-
-  if (mostStudied) {
-    addInsight({
-      type: "activity",
-      title: `${mostStudied.subject} is your most studied subject.`,
-      detail: `${mostStudied.attempts} quiz attempt${mostStudied.attempts === 1 ? "" : "s"} logged so far.`,
-      href: `#summary?subject=${encodeURIComponent(mostStudied.subject)}`
-    }, mostStudied.subject);
-  }
-
-  documentSubjects.forEach((item) => {
-    addInsight({
-      type: "focus",
-      title: `${item.subject} is ready for review.`,
-      detail: "Open your summary or try a short quiz.",
-      href: item.documentId
-        ? `#summary?documentId=${item.documentId}`
-        : `#summary?subject=${encodeURIComponent(item.subject)}`
-    }, item.subject);
-  });
-
-  if (!insights.length) {
-    addInsight({
-      type: "streak",
-      title: "Start a 1-day streak today.",
-      detail: "Upload notes or review flashcards to begin.",
-      href: "#summary"
-    });
-    addInsight({
-      type: "focus",
-      title: "Generate a quiz from your notes.",
-      detail: "Quiz history will unlock sharper insights.",
+      title: "No quiz attempts yet.",
+      detail: "Complete a quiz to reveal revision priorities.",
       href: "#quizzes"
-    });
-    addInsight({
+    };
+  })();
+
+  const activityInsight = buildGoalInsight(goal) || (() => {
+    if (weekActivity.quizAttempts > 0) {
+      return {
+        type: "activity",
+        title: `You completed ${weekActivity.quizAttempts} quiz${weekActivity.quizAttempts === 1 ? "" : "zes"} this week.`,
+        detail: "Keep using practice questions to check retention.",
+        href: "#quizzes"
+      };
+    }
+
+    if (weekActivity.studyMinutes > 0) {
+      return {
+        type: "activity",
+        title: `${Math.round(weekActivity.studyMinutes)} study minutes logged this week.`,
+        detail: "A little consistency compounds quickly.",
+        href: "#dashboard"
+      };
+    }
+
+    if (mostStudied) {
+      return {
+        type: "activity",
+        title: `${mostStudied.subject} is your most studied subject.`,
+        detail: `${mostStudied.attempts} quiz attempt${mostStudied.attempts === 1 ? "" : "s"} logged so far.`,
+        href: `#summary?subject=${encodeURIComponent(mostStudied.subject)}`
+      };
+    }
+
+    return {
       type: "activity",
-      title: "Review flashcards for quick recall.",
-      detail: "A short deck helps build daily consistency.",
-      href: "#flashcards"
-    });
+      title: "Set a daily goal to track your study progress.",
+      detail: "Choose a study or quiz target to stay on track.",
+      href: "#dashboard",
+      action: "dailyGoal"
+    };
+  })();
+
+  return [positiveInsight, revisionInsight, activityInsight].slice(0, 3);
+}
+
+function buildGoalInsight(goal) {
+  if (!goal?.hasGoal) {
+    return {
+      type: "activity",
+      title: "Set a daily goal to track your study progress.",
+      detail: "Choose a study or quiz target to stay on track.",
+      href: "#dashboard",
+      action: "dailyGoal"
+    };
   }
 
-  return insights.slice(0, 3);
+  if (goal.type === "quiz") {
+    const target = Number(goal.targetQuizzes || 0);
+    const completed = Number(goal.todayQuizAttempts || 0);
+    const remaining = Math.max(0, target - completed);
+
+    if (remaining === 0) {
+      return {
+        type: "activity",
+        title: "Daily goal completed.",
+        detail: "You reached today's quiz target.",
+        href: "#dashboard",
+        action: "dailyGoal"
+      };
+    }
+
+    return {
+      type: "activity",
+      title: `Only ${remaining} more quiz${remaining === 1 ? "" : "zes"} needed to complete today's goal.`,
+      detail: `You're ${goalPercent(completed, target)}% of the way to today's quiz target.`,
+      href: "#dashboard",
+      action: "dailyGoal"
+    };
+  }
+
+  const target = Number(goal.targetMinutes || 0);
+  const completed = Number(goal.todayStudyMinutes || 0);
+  const remaining = Math.max(0, Math.ceil(target - completed));
+
+  if (remaining === 0) {
+    return {
+      type: "activity",
+      title: "Daily goal completed.",
+      detail: "You reached today's study target.",
+      href: "#dashboard",
+      action: "dailyGoal"
+    };
+  }
+
+  return {
+    type: "activity",
+    title: `Only ${remaining} more minute${remaining === 1 ? "" : "s"} to reach today's goal.`,
+    detail: `You're ${goalPercent(completed, target)}% of the way to today's study goal.`,
+    href: "#dashboard",
+    action: "dailyGoal"
+  };
+}
+
+function isGoalComplete(goal) {
+  if (!goal?.hasGoal) {
+    return false;
+  }
+
+  if (goal.type === "quiz") {
+    return Number(goal.todayQuizAttempts || 0) >= Number(goal.targetQuizzes || 0);
+  }
+
+  return Number(goal.todayStudyMinutes || 0) >= Number(goal.targetMinutes || 0);
+}
+
+function goalPercent(completed, target) {
+  if (!target) {
+    return 0;
+  }
+
+  return Math.min(100, Math.round((Number(completed || 0) / Number(target)) * 100));
+}
+
+function summarizeRecentActivity(chartData = [], days = 7) {
+  return chartData.slice(-days).reduce(
+    (totals, item) => ({
+      quizAttempts: totals.quizAttempts + Number(item.quizAttempts || 0),
+      studyMinutes: totals.studyMinutes + Number(item.studyTime || 0)
+    }),
+    { quizAttempts: 0, studyMinutes: 0 }
+  );
 }
 
 function findImprovingTopic(attempts) {
@@ -606,44 +788,58 @@ function findImprovingTopic(attempts) {
   return best;
 }
 
-function daysSince(date) {
-  if (!date) {
-    return 999;
-  }
-
-  return Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / DAY_MS));
-}
-
-function buildContinueLearning(subjectActivity, topicPerformance, flashcardActivity) {
+function buildContinueLearning(subjectActivity, summaryActivity, topicPerformance, flashcardActivity, hiddenItems = []) {
   const cardsBySubject = new Map();
+  const hiddenSubjects = new Set(hiddenItems.map((item) => item.subject));
 
   subjectActivity.forEach((subject) => {
     cardsBySubject.set(subject._id, {
       documentId: subject.documentId?.toString?.(),
       subject: subject._id,
       documents: subject.documents || 0,
-      summaries: subject.summaries || 0,
+      summaries: 0,
       flashcardsReviewed: 0,
       quizAttempts: 0,
       progress: 0,
-      lastStudiedAt: subject.lastStudiedAt,
+      lastActivityAt: subject.latestDocumentActivityAt,
+      lastOpenedAt: subject.lastOpenedAt,
+      lastUploadedAt: subject.latestUploadAt,
       detail: `${subject.documents} document${subject.documents === 1 ? "" : "s"} uploaded`,
-      status: subject.summaries > 0 ? "Summary complete" : "Not Started"
+      status: "Not studied yet"
     });
+  });
+
+  summaryActivity.forEach((subject) => {
+    const existing = cardsBySubject.get(subject._id) || {
+      documentId: subject.documentId?.toString?.(),
+      subject: subject._id,
+      documents: 0,
+      progress: 0,
+      detail: "Summary ready",
+      status: "Summary completed"
+    };
+
+    existing.documentId = existing.documentId || subject.documentId?.toString?.();
+    existing.summaries = subject.summaries || 0;
+    existing.lastSummaryGeneratedAt = subject.lastGeneratedAt;
+    existing.lastActivityAt = latestDate(existing.lastActivityAt, subject.lastGeneratedAt);
+    existing.status = "Summary completed";
+    cardsBySubject.set(subject._id, existing);
   });
 
   flashcardActivity.forEach((subject) => {
     const existing = cardsBySubject.get(subject._id) || {
       subject: subject._id,
       progress: 0,
-      lastStudiedAt: subject.lastReviewedAt,
+      lastActivityAt: subject.lastReviewedAt,
       detail: "Flashcards ready",
       status: "Flashcards reviewed"
     };
 
     existing.flashcards = subject.cards || 0;
     existing.flashcardsReviewed = subject.reviewed || 0;
-    existing.lastStudiedAt = latestDate(existing.lastStudiedAt, subject.lastReviewedAt);
+    existing.lastFlashcardsReviewedAt = subject.lastReviewedAt;
+    existing.lastActivityAt = latestDate(existing.lastActivityAt, subject.lastReviewedAt);
     existing.status = subject.reviewed > 0 ? "Flashcards reviewed" : existing.status || "Flashcards ready";
     cardsBySubject.set(subject._id, existing);
   });
@@ -652,37 +848,36 @@ function buildContinueLearning(subjectActivity, topicPerformance, flashcardActiv
     const existing = cardsBySubject.get(topic.subject) || {
       subject: topic.subject,
       progress: 0,
-      lastStudiedAt: topic.lastStudiedAt,
+      lastActivityAt: topic.lastStudiedAt,
       detail: `${topic.attempts} quiz attempt${topic.attempts === 1 ? "" : "s"}`,
-      status: "Quiz progress"
+      status: "Quiz attempted"
     };
 
     existing.quizAttempts = topic.attempts || 0;
-    existing.lastStudiedAt = latestDate(existing.lastStudiedAt, topic.lastStudiedAt);
+    existing.lastQuizAttemptAt = topic.lastStudiedAt;
+    existing.lastActivityAt = latestDate(existing.lastActivityAt, topic.lastStudiedAt);
     existing.lastScore = Math.round(topic.latestScore || topic.averageScore || 0);
-    existing.status = "Quiz progress";
+    existing.status = "Quiz attempted";
     cardsBySubject.set(topic.subject, existing);
   });
 
   return [...cardsBySubject.values()]
+    .filter((item) => !hiddenSubjects.has(item.subject))
+    .filter((item) => item.lastActivityAt)
     .sort((a, b) => {
-      const unfinished = Number(calculateActionProgress(a) >= 100) - Number(calculateActionProgress(b) >= 100);
-      if (unfinished !== 0) {
-        return unfinished;
-      }
-
-      return new Date(b.lastStudiedAt || 0) - new Date(a.lastStudiedAt || 0);
+      return new Date(b.lastActivityAt || 0) - new Date(a.lastActivityAt || 0);
     })
     .slice(0, 3)
     .map((item) => {
       const progress = calculateActionProgress(item);
+      const status = progressStatus(item);
 
       return {
         subject: item.subject,
         progress,
-        lastStudied: formatRelativeDate(item.lastStudiedAt),
-        detail: item.detail,
-        status: item.status || progressStatus(item),
+        lastStudied: formatRelativeDate(item.lastActivityAt),
+        detail: progress === 0 ? "0% complete" : item.detail,
+        status,
         lastScore: Number.isFinite(item.lastScore) ? item.lastScore : null,
         primaryActionLabel: progress >= 100 ? "Revise Again" : "Continue",
         summaryHref: item.documentId ? `#summary?documentId=${item.documentId}` : `#summary?subject=${encodeURIComponent(item.subject)}`,
@@ -696,11 +891,7 @@ function buildAverageScoreTrend(weeklyScoreTrend) {
   const previous = weeklyScoreTrend.find((item) => item._id === "previous")?.averageScore || 0;
   const delta = Math.round(current - previous);
 
-  return {
-    direction: delta >= 0 ? "up" : "down",
-    value: delta,
-    label: `${delta >= 0 ? "+" : ""}${delta}% from last week`
-  };
+  return buildKpiTrend(delta, "%");
 }
 
 function buildStudyStreakTrend(currentStreak, activityDays) {
@@ -719,12 +910,29 @@ function buildStudyStreakTrend(currentStreak, activityDays) {
   }
 
   const delta = currentStreak - previousWeekActiveDays;
-  const dayLabel = Math.abs(delta) === 1 ? "day" : "days";
+
+  return buildKpiTrend(delta, "days");
+}
+
+function buildKpiTrend(delta, unit = "") {
+  const value = Number(delta || 0);
+
+  if (value === 0) {
+    return {
+      direction: "flat",
+      value,
+      label: "Same as last week"
+    };
+  }
+
+  const absoluteValue = Math.abs(value);
+  const normalizedUnit = unit === "days" && absoluteValue === 1 ? "day" : unit;
+  const suffix = normalizedUnit === "%" ? "%" : ` ${normalizedUnit}`.trimEnd();
 
   return {
-    direction: delta >= 0 ? "up" : "down",
-    value: delta,
-    label: `${delta >= 0 ? "+" : ""}${delta} ${dayLabel} from last week`
+    direction: value > 0 ? "up" : "down",
+    value,
+    label: `${value > 0 ? "+" : ""}${absoluteValue}${suffix} from last week`
   };
 }
 
@@ -750,7 +958,11 @@ function calculateActionProgress(subject) {
 
 function progressStatus(subject) {
   if (subject.quizAttempts > 0) {
-    return "Quiz progress";
+    if (subject.summaries > 0) {
+      return "Summary completed and quiz attempted";
+    }
+
+    return "Quiz attempted";
   }
 
   if (subject.flashcardsReviewed > 0) {
@@ -758,10 +970,10 @@ function progressStatus(subject) {
   }
 
   if (subject.summaries > 0) {
-    return "Summary complete";
+    return "Summary completed";
   }
 
-  return "Not Started";
+  return "Not studied yet";
 }
 
 function latestDate(left, right) {

@@ -1,0 +1,497 @@
+%PDF-1.3
+%ºß¬à
+3 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 5364
+>>
+stream
+0.200025 w
+0 G
+BT
+/F2 24 Tf
+27.5999999999999979 TL
+0.039 0.176 0.478 rg
+54. 787.8899999999999864 Td
+(Cloud_Computing_Key_Concepts \(1\)) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.361 0.416 0.525 rg
+54. 751.8899999999999864 Td
+(Short summary  |  PDF document  |  5 pages  |  css  |  Generated 3 Jun 2026) Tj
+ET
+BT
+/F2 14 Tf
+16.0999999999999979 TL
+0.039 0.176 0.478 rg
+54. 728.8899999999999864 Td
+(AI Summary) Tj
+ET
+0.96 0.7 0. RG
+54. 710.8899999999999864 m
+150. 710.8899999999999864 l
+S
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.961 0.702 0.004 rg
+54. 688.8899999999999864 Td
+(Overview) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+54. 671.8899999999999864 Td
+(Cloud computing delivers scalable IT services like servers and software over the internet on) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+54. 654.8899999999999864 Td
+(demand, characterized by resource pooling and rapid elasticity. Key models include IaaS,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+54. 637.8899999999999864 Td
+(PaaS, and SaaS, deployed publicly, privately, or hybrid. Virtualization, using VMs and) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+54. 620.8899999999999864 Td
+(containers, is fundamental.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.961 0.702 0.004 rg
+54. 595.8899999999999864 Td
+(Why It Matters) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+54. 578.8899999999999864 Td
+(DBMS manages structured data, primarily using the relational model. Essential concepts) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+54. 561.8899999999999864 Td
+(include normalization to reduce redundancy, SQL for data interaction, and ACID properties) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+54. 544.8899999999999864 Td
+(\(Atomicity, Consistency, Isolation, Durability\) to ensure reliable transactions and data) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+54. 527.8899999999999864 Td
+(integrity.) Tj
+ET
+BT
+/F2 14 Tf
+16.0999999999999979 TL
+0.039 0.176 0.478 rg
+54. 494.8899999999999864 Td
+(Important Questions) Tj
+ET
+0.96 0.7 0. RG
+54. 476.8899999999999864 m
+150. 476.8899999999999864 l
+S
+BT
+/F2 10.5 Tf
+12.0749999999999993 TL
+0.039 0.176 0.478 rg
+54. 454.8899999999999864 Td
+(1.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 454.8899999999999864 Td
+(Compare and contrast the three main cloud service models \(IaaS, PaaS, SaaS\) by defining) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 437.8899999999999864 Td
+(each, providing an example, and outlining the user's responsibility versus the provider's) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 420.8899999999999864 Td
+(responsibility.) Tj
+ET
+BT
+/F2 10.5 Tf
+12.0749999999999993 TL
+0.039 0.176 0.478 rg
+54. 398.8899999999999864 Td
+(2.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 398.8899999999999864 Td
+(Explain the five essential characteristics of cloud computing as defined by NIST, providing a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 381.8899999999999864 Td
+(brief description for each. How do these characteristics collectively enable the benefits of) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 364.8899999999999864 Td
+(cloud adoption?) Tj
+ET
+BT
+/F2 10.5 Tf
+12.0749999999999993 TL
+0.039 0.176 0.478 rg
+54. 342.8899999999999864 Td
+(3.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 342.8899999999999864 Td
+(Describe the purpose of normalization in DBMS and explain the first three normal forms) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 325.8899999999999864 Td
+(\(1NF, 2NF, 3NF\) with specific conditions for each. Provide an example of a data anomaly that) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 308.8899999999999864 Td
+(normalization aims to prevent.) Tj
+ET
+BT
+/F2 10.5 Tf
+12.0749999999999993 TL
+0.039 0.176 0.478 rg
+54. 286.8899999999999864 Td
+(4.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 286.8899999999999864 Td
+(Define the ACID properties of database transactions. Illustrate how a violation of any one of) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 269.8899999999999864 Td
+(these properties could lead to data inconsistency or loss in a banking transaction scenario) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 252.8899999999999864 Td
+(involving a fund transfer.) Tj
+ET
+BT
+/F2 10.5 Tf
+12.0749999999999993 TL
+0.039 0.176 0.478 rg
+54. 230.8899999999999864 Td
+(5.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 230.8899999999999864 Td
+(Discuss the concept of virtualization as the foundation of cloud computing. Differentiate) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 213.8899999999999864 Td
+(between Virtual Machines \(VMs\) and Containers, highlighting their respective advantages) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.137 0.176 0.275 rg
+78. 196.8899999999999864 Td
+(and use cases in a cloud environment.) Tj
+ET
+0.86 0.89 0.96 RG
+54. 42. m
+541.2799999999999727 42. l
+S
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.447 0.502 0.627 rg
+54. 24. Td
+(StudyMind AI) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.447 0.502 0.627 rg
+495.5599999999999454 24. Td
+(Page 1 of 1) Tj
+ET
+endstream
+endobj
+1 0 obj
+<</Type /Pages
+/Kids [3 0 R ]
+/Count 1
+>>
+endobj
+5 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+6 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+7 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+8 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+9 0 obj
+<<
+/Type /Font
+/BaseFont /Courier
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+10 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+11 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+12 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+13 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Roman
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+14 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+15 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Italic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+16 0 obj
+<<
+/Type /Font
+/BaseFont /Times-BoldItalic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+17 0 obj
+<<
+/Type /Font
+/BaseFont /ZapfDingbats
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+18 0 obj
+<<
+/Type /Font
+/BaseFont /Symbol
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+2 0 obj
+<<
+/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]
+/Font <<
+/F1 5 0 R
+/F2 6 0 R
+/F3 7 0 R
+/F4 8 0 R
+/F5 9 0 R
+/F6 10 0 R
+/F7 11 0 R
+/F8 12 0 R
+/F9 13 0 R
+/F10 14 0 R
+/F11 15 0 R
+/F12 16 0 R
+/F13 17 0 R
+/F14 18 0 R
+>>
+/XObject <<
+>>
+>>
+endobj
+19 0 obj
+<<
+/Producer (jsPDF 4.2.1)
+/CreationDate (D:20260603180331+05'30')
+>>
+endobj
+20 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+/OpenAction [3 0 R /FitH null]
+/PageLayout /OneColumn
+>>
+endobj
+xref
+0 21
+0000000000 65535 f 
+0000005568 00000 n 
+0000007385 00000 n 
+0000000015 00000 n 
+0000000152 00000 n 
+0000005625 00000 n 
+0000005750 00000 n 
+0000005880 00000 n 
+0000006013 00000 n 
+0000006150 00000 n 
+0000006273 00000 n 
+0000006402 00000 n 
+0000006534 00000 n 
+0000006670 00000 n 
+0000006798 00000 n 
+0000006925 00000 n 
+0000007054 00000 n 
+0000007187 00000 n 
+0000007289 00000 n 
+0000007633 00000 n 
+0000007719 00000 n 
+trailer
+<<
+/Size 21
+/Root 20 0 R
+/Info 19 0 R
+/ID [ <3732ED234771AFBE2BFD4182607E6686> <3732ED234771AFBE2BFD4182607E6686> ]
+>>
+startxref
+7823
+%%EOF

@@ -26,7 +26,7 @@ export async function buildSelectedPdfSource(user, payload = {}) {
     .map((document, index) => ({
       document,
       text: cleanText(document.extractedText),
-      heading: document.title || document.originalFileName || `PDF ${index + 1}`
+      heading: getDocumentDisplayName(document) || `PDF ${index + 1}`
     }))
     .filter((item) => item.text);
 
@@ -54,6 +54,13 @@ export async function buildSelectedPdfSource(user, payload = {}) {
     subject,
     title: `${subject} Selected PDFs`
   };
+}
+
+function getDocumentDisplayName(document) {
+  return String(document.displayName || document.title || document.originalFileName || "")
+    .replace(/\.pdf$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeSelectedDocumentIds(value) {

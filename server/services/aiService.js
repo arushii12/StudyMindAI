@@ -43,6 +43,15 @@ export async function generateStudyAssistantAnswer(studyMaterial, context = {}) 
   });
 }
 
+export async function generateQuizPerformanceInsight(context = {}) {
+  const prompt = buildQuizPerformanceInsightPrompt(context);
+  return generateStructuredJson({
+    prompt,
+    systemPrompt: "You are an expert AI study coach. Return structured JSON only.",
+    errorLabel: "quiz performance insight"
+  });
+}
+
 export function getActiveAiModelName() {
   if (process.env.GEMINI_API_KEY) {
     return GEMINI_MODEL;
@@ -154,8 +163,16 @@ Requirements:
 * Do not return placeholder content.
 * Explain concepts clearly for student revision.
 * Avoid repetitive wording.
-* Organize the content into readable sections.
+* Organize the content as a cohesive study guide, not random notes.
+* Identify the actual major topics, concepts, models, processes, systems, or theories in the source material and use those as section headings.
+* Each section heading must read like a textbook chapter title and name the main topic of the whole section, such as "Cloud Service Models", "Deployment Models", "Virtualization", "Containers", "Storage Systems", "Memory Management", "Normalization", or "Scheduling Algorithms".
+* Do not create headings by copying the first sentence, first few words, quoted phrases, transition words, or fragments from the paragraph.
+* Never use fragment headings such as "Finally", "Here", "A Public Cloud", "This Means", or "In Addition".
+* Start with a short overview section, then cover the major source topics in 5 to 10 high-quality sections for detailed summaries.
+* Prefer fewer strong sections that combine related ideas over many tiny sections.
 * Preserve important definitions, processes, comparisons, examples, and exam-relevant points.
+* Never use generic headings such as "Study Note 1", "Study Note 2", "Study Note 3", "Study Note 7", "Revision Strategy", "Exam Focus", "Important Note", "Learning Point", "Topic 1", or "Topic 2" unless that exact phrase appears as a real heading in the source material.
+* Format each section inside the summary strings as: "Topic Heading: concise explanation". Separate sections with a newline.
 * short must be 60 to 100 words.
 * medium must be 150 to 250 words.
 * detailed must be 500 to 700 words.
@@ -227,6 +244,45 @@ Subject: ${context.subject || "General Studies"}
 
 Study material:
 ${trimMaterial(studyMaterial, 18000)}`;
+}
+
+function buildQuizPerformanceInsightPrompt(context) {
+  const answers = Array.isArray(context.answers) ? context.answers : [];
+  const compactAnswers = answers.slice(0, 20).map((answer) => ({
+    question: String(answer.questionText || "").slice(0, 500),
+    status: answer.status,
+    selectedAnswer: answer.selectedAnswerText || "Not answered",
+    correctAnswer: answer.correctAnswerText || "",
+    explanation: String(answer.explanation || "").slice(0, 500),
+    topic: answer.topic || answer.category || ""
+  }));
+
+  return `Generate a personalized quiz performance insight for a student.
+
+Return JSON only in this exact shape:
+{
+  "insight": "2 to 5 concise sentences"
+}
+
+Rules:
+* Base the insight only on the quiz data below.
+* Mention score pattern, correct/incorrect/unanswered counts, and visible answer patterns.
+* Identify strengths only when supported by correctly answered question text or reliable topic/category metadata.
+* Identify weaknesses only when supported by incorrect or unanswered question text or reliable topic/category metadata.
+* If topic metadata is missing or unreliable, infer gently from question text and avoid pretending certainty.
+* Do not create separate strong/weak area lists.
+* Do not use markdown, bullets, headings, or generic filler.
+* Keep the tone encouraging and specific for a study platform.
+
+Quiz title: ${context.quizTitle || "StudyMind Quiz"}
+Score percentage: ${Number(context.scorePercentage || 0)}%
+Correct: ${Number(context.correctCount || 0)}
+Incorrect: ${Number(context.incorrectCount || 0)}
+Unanswered: ${Number(context.unansweredCount || 0)}
+Total questions: ${Number(context.totalQuestions || 0)}
+
+Question performance data:
+${JSON.stringify(compactAnswers, null, 2)}`;
 }
 
 function buildFlashcardPrompt(studyMaterial, context) {

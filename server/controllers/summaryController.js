@@ -1,5 +1,6 @@
 import {
   chatWithSummaryAssistant,
+  deleteSummaryForUser,
   generateSummaryForUser,
   getQuestionsForSummary,
   getSummaryForUser
@@ -42,6 +43,15 @@ export async function getSummaryQuestions(req, res, next) {
   try {
     const questions = await getQuestionsForSummary(req.user, req.params.id);
     res.json({ questions });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteSummary(req, res, next) {
+  try {
+    const result = await deleteSummaryForUser(req.user, req.params.id);
+    res.json(result);
   } catch (error) {
     next(error);
   }

@@ -9,6 +9,7 @@ import {
   Bookmark,
   Brain,
   ChartNoAxesCombined,
+  Check,
   ChevronDown,
   Clock3,
   Download,
@@ -20,6 +21,7 @@ import {
   Layers,
   LibraryBig,
   LineChart,
+  LogOut,
   MoreVertical,
   Maximize2,
   Minimize2,
@@ -30,7 +32,9 @@ import {
   Sparkles,
   Target,
   Trash2,
+  Trophy,
   Upload,
+  UserCircle,
   X,
   ZoomIn,
   ZoomOut
@@ -50,7 +54,7 @@ const navigationItems = [
 ];
 
 const statConfig = [
-  { key: "documentsUploaded", label: "Documents Uploaded", icon: LibraryBig },
+  { key: "documentsUploaded", label: "PDFs in Library", icon: LibraryBig },
   { key: "quizAttempts", label: "Quiz Attempts", icon: Target },
   { key: "averageScore", label: "Average Score", icon: ChartNoAxesCombined, suffix: "%" },
   { key: "studyStreak", label: "Study Streak", icon: Flame, suffix: " Days" }
@@ -63,8 +67,14 @@ const insightIcons = {
   improving: LineChart
 };
 
+const TOAST_DISMISS_MS = 5000;
+
 function App() {
   const [page, setPage] = useState(getPageFromHash());
+  const [auth, setAuth] = useState({
+    status: "checking",
+    user: null
+  });
   const [dashboard, setDashboard] = useState(null);
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -80,7 +90,7 @@ function App() {
     status: "idle",
     message: ""
   });
-  const liveStudySeconds = useStudyActivityTracker(page);
+  const liveStudySeconds = useStudyActivityTracker(page, auth.status === "authenticated");
 
   useEffect(() => {
     const handleHashChange = () => setPage(getPageFromHash());
@@ -103,7 +113,36 @@ function App() {
   }, [sidebarCollapsed]);
 
   useEffect(() => {
-    if (page !== "dashboard") {
+    let cancelled = false;
+
+    async function restoreSession() {
+      try {
+        const response = await fetch("/api/auth/me");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Session not found.");
+        }
+
+        if (!cancelled) {
+          setAuth({ status: "authenticated", user: data.user });
+        }
+      } catch {
+        if (!cancelled) {
+          setAuth({ status: "unauthenticated", user: null });
+        }
+      }
+    }
+
+    restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (auth.status !== "authenticated" || page !== "dashboard") {
       return undefined;
     }
 
@@ -135,12 +174,43 @@ function App() {
     loadDashboard();
 
     return () => controller.abort();
-  }, [page, dashboardRefreshToken]);
+  }, [auth.status, page, dashboardRefreshToken]);
 
-  const user = dashboard?.user || {
-    name: "Alex Morgan",
-    email: "alex@studymind.ai"
-  };
+  const user = dashboard?.user || auth.user;
+
+  async function handleAuthenticated(userData) {
+    setDashboard(null);
+    setAuth({ status: "authenticated", user: userData });
+    window.location.hash = "#dashboard";
+  }
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setDashboard(null);
+      setAuth({ status: "unauthenticated", user: null });
+      window.location.hash = "#dashboard";
+    }
+  }
+
+  if (auth.status === "checking") {
+    return (
+      <div className="auth-shell">
+        <div className="auth-loading-card">
+          <div className="brand-mark">
+            <GraduationCap size={24} />
+          </div>
+          <strong>StudyMind AI</strong>
+          <span>Restoring your session...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (auth.status !== "authenticated") {
+    return <AuthPage onAuthenticated={handleAuthenticated} />;
+  }
 
   return (
     <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -148,6 +218,7 @@ function App() {
         user={user}
         activePage={page}
         collapsed={sidebarCollapsed}
+        onLogout={handleLogout}
         onToggle={() => setSidebarCollapsed((value) => !value)}
       />
       <main className={`dashboard-main ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -157,6 +228,8 @@ function App() {
           <LibraryPage />
         ) : page === "quizzes" ? (
           <QuizPage />
+        ) : page === "quiz-results" ? (
+          <QuizResultsPage />
         ) : page === "flashcards" ? (
           <FlashcardsPage />
         ) : page === "review" ? (
@@ -186,7 +259,11 @@ function getHashParams() {
   return new URLSearchParams(query);
 }
 
-function useStudyActivityTracker(page) {
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+}
+
+function useStudyActivityTracker(page, enabled = true) {
   const [liveSeconds, setLiveSeconds] = useState(0);
   const lastActivityRef = useRef(Date.now());
   const lastTickRef = useRef(Date.now());
@@ -198,6 +275,10 @@ function useStudyActivityTracker(page) {
   }, [page]);
 
   useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+
     function markActive() {
       lastActivityRef.current = Date.now();
     }
@@ -271,12 +352,49 @@ function useStudyActivityTracker(page) {
       window.removeEventListener("beforeunload", handlePageHide);
       flushActivity(true);
     };
-  }, []);
+  }, [enabled]);
 
   return liveSeconds;
 }
 
-function Sidebar({ user, activePage, collapsed, onToggle }) {
+function useAutoDismissMessage(message, setMessage, duration = TOAST_DISMISS_MS) {
+  useEffect(() => {
+    if (message.type !== "success") {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMessage((current) => (
+        current.type === "success" && current.text === message.text
+          ? { type: "idle", text: "" }
+          : current
+      ));
+    }, duration);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [duration, message.text, message.type, setMessage]);
+}
+
+function useAutoDismissStatus(state, setState, duration = TOAST_DISMISS_MS) {
+  useEffect(() => {
+    if (state.status !== "success") {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setState((current) => (
+        current.status === "success" && current.message === state.message
+          ? { status: "idle", message: "" }
+          : current
+      ));
+    }, duration);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [duration, setState, state.message, state.status]);
+}
+
+function Sidebar({ user, activePage, collapsed, onLogout, onToggle }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const initials = user.name
     .split(" ")
     .map((part) => part[0])
@@ -318,20 +436,287 @@ function Sidebar({ user, activePage, collapsed, onToggle }) {
         })}
       </nav>
 
-      <div className="profile-card" data-tooltip={`${user.name} - ${user.email}`}>
-        <div className="avatar">{initials}</div>
-        <div>
-          <strong>{user.name}</strong>
-          <span>{user.email}</span>
-        </div>
+      <div className="profile-area">
+        <button
+          className="profile-card"
+          data-tooltip={`${user.name} - ${user.email}`}
+          type="button"
+          onClick={() => setMenuOpen((value) => !value)}
+          aria-expanded={menuOpen}
+        >
+          <div className="avatar">{initials}</div>
+          <div>
+            <strong>{user.name}</strong>
+            <span>{user.email}</span>
+          </div>
+        </button>
+        {menuOpen && (
+          <div className="profile-menu">
+            <div>
+              <UserCircle size={17} />
+              <span>Profile</span>
+            </div>
+            <button type="button" onClick={onLogout}>
+              <LogOut size={17} />
+              <span>Logout</span>
+            </button>
+          </div>
+        )}
       </div>
     </aside>
+  );
+}
+
+function AuthPage({ onAuthenticated }) {
+  const [mode, setMode] = useState("login");
+
+  return (
+    <div className="auth-shell">
+      <section className="auth-card">
+        <div className="auth-brand">
+          <div className="brand-mark">
+            <GraduationCap size={24} />
+          </div>
+          <div>
+            <strong>StudyMind AI</strong>
+            <span>AI study workspace</span>
+          </div>
+        </div>
+        {mode === "login" ? (
+          <LoginForm
+            onAuthenticated={onAuthenticated}
+            onCreateAccount={() => setMode("signup")}
+          />
+        ) : (
+          <SignupForm
+            onAuthenticated={onAuthenticated}
+            onLogin={() => setMode("login")}
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function LoginForm({ onAuthenticated, onCreateAccount }) {
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [errors, setErrors] = useState({});
+  const [status, setStatus] = useState("idle");
+  const [message, setMessage] = useState("");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const nextErrors = {};
+
+    if (!form.email.trim()) {
+      nextErrors.email = "Email is required.";
+    }
+
+    if (!form.password) {
+      nextErrors.password = "Password is required.";
+    }
+
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length) {
+      return;
+    }
+
+    try {
+      setStatus("loading");
+      setMessage("");
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Invalid email or password.");
+      }
+
+      onAuthenticated(data.user);
+    } catch (loginError) {
+      setMessage(loginError.message || "Invalid email or password.");
+      setStatus("error");
+    } finally {
+      setStatus((current) => current === "loading" ? "idle" : current);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={handleSubmit}>
+      <div className="auth-copy">
+        <span>Welcome back</span>
+        <h1>Login to your account</h1>
+        <p>Continue with your folders, PDFs, quizzes, and flashcards.</p>
+      </div>
+
+      {message && <div className="auth-message error">{message}</div>}
+
+      <AuthField
+        error={errors.email}
+        label="Email Address"
+        name="email"
+        onChange={setForm}
+        type="email"
+        value={form.email}
+      />
+      <AuthField
+        error={errors.password}
+        label="Password"
+        name="password"
+        onChange={setForm}
+        type="password"
+        value={form.password}
+      />
+
+      <button className="auth-primary-button" type="submit" disabled={status === "loading"}>
+        {status === "loading" ? "Logging in..." : "Login"}
+      </button>
+      <button className="auth-secondary-button" type="button" onClick={onCreateAccount}>
+        Create Account
+      </button>
+    </form>
+  );
+}
+
+function SignupForm({ onAuthenticated, onLogin }) {
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: ""
+  });
+  const [errors, setErrors] = useState({});
+  const [status, setStatus] = useState("idle");
+  const [message, setMessage] = useState("");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const nextErrors = {};
+
+    if (!form.name.trim()) {
+      nextErrors.name = "Name is required.";
+    }
+
+    if (!isValidEmail(form.email)) {
+      nextErrors.email = "Valid email is required.";
+    }
+
+    if (form.password.length < 8) {
+      nextErrors.password = "Password must be at least 8 characters.";
+    }
+
+    if (form.password !== form.confirmPassword) {
+      nextErrors.confirmPassword = "Passwords do not match.";
+    }
+
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length) {
+      return;
+    }
+
+    try {
+      setStatus("loading");
+      setMessage("");
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to create account.");
+      }
+
+      onAuthenticated(data.user);
+    } catch (signupError) {
+      setMessage(signupError.message || "Unable to create account.");
+      setStatus("error");
+    } finally {
+      setStatus((current) => current === "loading" ? "idle" : current);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={handleSubmit}>
+      <div className="auth-copy">
+        <span>Create account</span>
+        <h1>Start studying privately</h1>
+        <p>Your study material, progress, and AI history stay attached only to your account.</p>
+      </div>
+
+      {message && <div className="auth-message error">{message}</div>}
+
+      <AuthField
+        error={errors.name}
+        label="Full Name"
+        name="name"
+        onChange={setForm}
+        value={form.name}
+      />
+      <AuthField
+        error={errors.email}
+        label="Email Address"
+        name="email"
+        onChange={setForm}
+        type="email"
+        value={form.email}
+      />
+      <AuthField
+        error={errors.password}
+        label="Password"
+        name="password"
+        onChange={setForm}
+        type="password"
+        value={form.password}
+      />
+      <AuthField
+        error={errors.confirmPassword}
+        label="Confirm Password"
+        name="confirmPassword"
+        onChange={setForm}
+        type="password"
+        value={form.confirmPassword}
+      />
+
+      <button className="auth-primary-button" type="submit" disabled={status === "loading"}>
+        {status === "loading" ? "Creating account..." : "Create Account"}
+      </button>
+      <button className="auth-secondary-button" type="button" onClick={onLogin}>
+        Login
+      </button>
+    </form>
+  );
+}
+
+function AuthField({ error, label, name, onChange, type = "text", value }) {
+  return (
+    <label className="auth-field">
+      <span>{label}</span>
+      <input
+        aria-invalid={Boolean(error)}
+        name={name}
+        type={type}
+        value={value}
+        onChange={(event) => onChange((current) => ({
+          ...current,
+          [name]: event.target.value
+        }))}
+      />
+      {error && <small>{error}</small>}
+    </label>
   );
 }
 
 function Header({ user, uploadState, setUploadState }) {
   const firstName = user.name.split(" ")[0] || "Alex";
   const fileInputRef = useRef(null);
+  useAutoDismissStatus(uploadState, setUploadState);
 
   async function handleFileChange(event) {
     const file = event.target.files?.[0];
@@ -372,6 +757,7 @@ function Header({ user, uploadState, setUploadState }) {
         status: "success",
         message: "PDF uploaded and summary generated."
       });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
       window.location.hash = `#summary?documentId=${data.document.id}`;
     } catch (uploadError) {
       setUploadState({
@@ -430,6 +816,7 @@ function LibraryPage() {
   const [aiAction, setAiAction] = useState("idle");
   const [activePdf, setActivePdf] = useState(null);
   const fileInputRef = useRef(null);
+  useAutoDismissMessage(message, setMessage);
 
   useEffect(() => {
     loadFolders();
@@ -549,6 +936,7 @@ function LibraryPage() {
       }
 
       setMessage({ type: "success", text: "Folder deleted." });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
 
       if (selectedFolder?.id === folder.id) {
         setSelectedFolder(null);
@@ -599,6 +987,7 @@ function LibraryPage() {
       }
 
       setMessage({ type: "success", text: "PDF uploaded to folder." });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
       await Promise.all([loadFolders(), openFolder(selectedFolder)]);
     } catch (uploadError) {
       setMessage({ type: "error", text: uploadError.message || "Upload failed." });
@@ -636,10 +1025,51 @@ function LibraryPage() {
       }
 
       setMessage({ type: "success", text: data.message || "PDFs moved." });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
       await Promise.all([loadFolders(), openFolder(selectedFolder)]);
     } catch (requestError) {
       setMessage({ type: "error", text: requestError.message || "Unable to move PDFs." });
     }
+  }
+
+  async function renameDocument(documentToRename, displayName) {
+    const cleanName = normalizeDisplayFileName(displayName);
+
+    if (!cleanName) {
+      throw new Error("File name cannot be empty.");
+    }
+
+    if (cleanName.length > 100) {
+      throw new Error("File name must be 100 characters or fewer.");
+    }
+
+    const response = await fetch(`/api/documents/${documentToRename.documentId}/rename`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: cleanName })
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Unable to rename PDF.");
+    }
+
+    const renamedDocument = data.document || {};
+    setFolderDocuments((currentDocuments) => currentDocuments.map((item) => (
+      item.documentId === documentToRename.documentId
+        ? { ...item, ...renamedDocument }
+        : item
+    )));
+    setActivePdf((currentPdf) => (
+      currentPdf?.documentId === documentToRename.documentId
+        ? { ...currentPdf, ...renamedDocument }
+        : currentPdf
+    ));
+    setMessage({ type: "success", text: data.message || "PDF renamed." });
+    window.dispatchEvent(new Event("studymind:dashboard-refresh"));
+    await loadFolders();
+
+    return renamedDocument;
   }
 
   async function deleteDocuments(documentIds) {
@@ -667,6 +1097,7 @@ function LibraryPage() {
       }
 
       setMessage({ type: "success", text: data.message || "PDFs deleted." });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
       await Promise.all([loadFolders(), openFolder(selectedFolder)]);
     } catch (requestError) {
       setMessage({ type: "error", text: requestError.message || "Unable to delete PDFs." });
@@ -785,6 +1216,7 @@ function LibraryPage() {
           onDelete={deleteFolder}
           onDeleteDocuments={deleteDocuments}
           onMoveDocuments={moveDocuments}
+          onRenameDocument={renameDocument}
           onRename={renameFolder}
           onGenerateSelected={generateFromSelected}
           onSelectDocuments={setSelectedDocumentIds}
@@ -893,6 +1325,7 @@ function FolderDetailView({
   onGenerateSelected,
   onMoveDocuments,
   onRename,
+  onRenameDocument,
   onSelectDocuments,
   onSetMoveTarget,
   onUploadFiles,
@@ -901,6 +1334,10 @@ function FolderDetailView({
   status,
   uploadState
 }) {
+  const [renamingDocumentId, setRenamingDocumentId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState("");
   const selectableDocuments = documents.map((document) => document.documentId);
   const allSelected = selectableDocuments.length > 0
     && selectableDocuments.every((id) => selectedDocumentIds.includes(id));
@@ -918,16 +1355,89 @@ function FolderDetailView({
     onSelectDocuments(allSelected ? [] : selectableDocuments);
   }
 
+  function handleRowClick(event, id) {
+    if (event.target.closest("a, button, input, select")) {
+      return;
+    }
+
+    toggleDocument(id);
+  }
+
+  function handleRowKeyDown(event, id) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleDocument(id);
+    }
+  }
+
   function handleDrop(event) {
     event.preventDefault();
     onUploadFiles(event.dataTransfer.files);
+  }
+
+  function startRename(documentToRename) {
+    setRenamingDocumentId(documentToRename.documentId);
+    setRenameValue(normalizeDisplayFileName(documentToRename.displayName || documentToRename.fileName || documentToRename.title));
+    setRenameError("");
+  }
+
+  function cancelRename() {
+    setRenamingDocumentId(null);
+    setRenameValue("");
+    setRenameError("");
+    setRenameSaving(false);
+  }
+
+  async function saveRename(documentToRename) {
+    const cleanName = normalizeDisplayFileName(renameValue);
+    const currentName = normalizeDisplayFileName(documentToRename.displayName || documentToRename.fileName || documentToRename.title);
+
+    if (!cleanName) {
+      setRenameError("Enter a file name.");
+      return;
+    }
+
+    if (cleanName.length > 100) {
+      setRenameError("Use 100 characters or fewer.");
+      return;
+    }
+
+    if (cleanName === currentName) {
+      cancelRename();
+      return;
+    }
+
+    try {
+      setRenameSaving(true);
+      setRenameError("");
+      await onRenameDocument(documentToRename, cleanName);
+      cancelRename();
+    } catch (requestError) {
+      setRenameError(requestError.message || "Unable to rename PDF.");
+      setRenameSaving(false);
+    }
+  }
+
+  function handleRenameKeyDown(event, documentToRename) {
+    event.stopPropagation();
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveRename(documentToRename);
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelRename();
+    }
   }
 
   return (
     <section className="folder-detail">
       <div className="folder-detail-heading">
         <button className="folder-back-button" type="button" onClick={onBack}>
-          Back to folders
+          <span aria-hidden="true">◀</span>
+          <span>Back to folders</span>
         </button>
         <div>
           <h2>{folder.name}</h2>
@@ -983,19 +1493,20 @@ function FolderDetailView({
               </button>
             </div>
             <div>
-              <select
-                aria-label="Move selected PDFs to folder"
-                onChange={(event) => onSetMoveTarget(event.target.value)}
+              <MoveFolderDropdown
+                disabled={!selectedDocumentIds.length || !destinationFolders.length}
+                label="Move selected PDFs to folder"
+                onChange={(nextFolderId) => {
+                  onSetMoveTarget(nextFolderId);
+
+                  if (nextFolderId && selectedDocumentIds.length) {
+                    onMoveDocuments(selectedDocumentIds, nextFolderId);
+                  }
+                }}
+                options={destinationFolders}
+                placeholder="Move to folder..."
                 value={moveTargetId}
-              >
-                <option value="">Move to folder...</option>
-                {destinationFolders.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
-                ))}
-              </select>
-              <button type="button" onClick={() => onMoveDocuments(selectedDocumentIds)} disabled={!selectedDocumentIds.length || !moveTargetId}>
-                Move Selected
-              </button>
+              />
               <button type="button" onClick={() => onDeleteDocuments(selectedDocumentIds)} disabled={!selectedDocumentIds.length}>
                 Delete Selected
               </button>
@@ -1005,14 +1516,7 @@ function FolderDetailView({
             <table className="pdf-table">
               <thead>
                 <tr>
-                  <th>
-                    <input
-                      aria-label="Select all PDFs"
-                      checked={allSelected}
-                      onChange={toggleAll}
-                      type="checkbox"
-                    />
-                  </th>
+                  <th className="pdf-checkbox-cell" aria-hidden="true" />
                   <th>File Name</th>
                   <th>Pages</th>
                   <th>Size</th>
@@ -1022,8 +1526,14 @@ function FolderDetailView({
               </thead>
               <tbody>
                 {documents.map((document) => (
-                  <tr className={selectedDocumentIds.includes(document.documentId) ? "selected" : ""} key={document.id}>
-                    <td>
+                  <tr
+                    className={selectedDocumentIds.includes(document.documentId) ? "selected" : ""}
+                    key={document.id}
+                    tabIndex={0}
+                    onClick={(event) => handleRowClick(event, document.documentId)}
+                    onKeyDown={(event) => handleRowKeyDown(event, document.documentId)}
+                  >
+                    <td className="pdf-checkbox-cell">
                       <input
                         aria-label={`Select ${document.fileName}`}
                         checked={selectedDocumentIds.includes(document.documentId)}
@@ -1032,7 +1542,56 @@ function FolderDetailView({
                       />
                     </td>
                     <td>
-                      <a href={`#summary?documentId=${document.documentId}`}>{document.fileName}</a>
+                      {renamingDocumentId === document.documentId ? (
+                        <div className="pdf-rename-editor">
+                          <input
+                            aria-label={`Rename ${document.fileName}`}
+                            autoFocus
+                            maxLength={100}
+                            onChange={(event) => {
+                              setRenameValue(event.target.value);
+                              setRenameError("");
+                            }}
+                            onKeyDown={(event) => handleRenameKeyDown(event, document)}
+                            type="text"
+                            value={renameValue}
+                          />
+                          <button
+                            aria-label="Save renamed file"
+                            className="pdf-rename-icon-button save"
+                            disabled={renameSaving}
+                            onClick={() => saveRename(document)}
+                            title="Save"
+                            type="button"
+                          >
+                            <Check size={15} />
+                          </button>
+                          <button
+                            aria-label="Cancel rename"
+                            className="pdf-rename-icon-button"
+                            disabled={renameSaving}
+                            onClick={cancelRename}
+                            title="Cancel"
+                            type="button"
+                          >
+                            <X size={15} />
+                          </button>
+                          {renameError && <span className="pdf-rename-error">{renameError}</span>}
+                        </div>
+                      ) : (
+                        <div className="pdf-file-name-cell">
+                          <a href={`#summary?documentId=${document.documentId}`}>{document.fileName}</a>
+                          <button
+                            aria-label={`Rename ${document.fileName}`}
+                            className="pdf-rename-trigger"
+                            onClick={() => startRename(document)}
+                            title="Rename file"
+                            type="button"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td>{document.pageCount || "—"}</td>
                     <td>{formatFileSize(document.fileSize)}</td>
@@ -1041,20 +1600,18 @@ function FolderDetailView({
                       <div className="pdf-row-actions">
                         <button type="button" onClick={() => onViewPdf(document)}>View PDF</button>
                         <a href={`#summary?documentId=${document.documentId}`}>Summary</a>
-                        <select
-                          aria-label={`Move ${document.fileName}`}
-                          onChange={(event) => {
-                            if (event.target.value) {
-                              onMoveDocuments([document.documentId], event.target.value);
-                              event.target.value = "";
+                        <MoveFolderDropdown
+                          disabled={!destinationFolders.length}
+                          label={`Move ${document.fileName}`}
+                          onChange={(nextFolderId) => {
+                            if (nextFolderId) {
+                              onMoveDocuments([document.documentId], nextFolderId);
                             }
                           }}
-                        >
-                          <option value="">Move</option>
-                          {destinationFolders.map((item) => (
-                            <option key={item.id} value={item.id}>{item.name}</option>
-                          ))}
-                        </select>
+                          options={destinationFolders}
+                          placeholder="Move"
+                          value=""
+                        />
                         <button type="button" onClick={() => onDeleteDocuments([document.documentId])}>Delete</button>
                       </div>
                     </td>
@@ -1089,6 +1646,7 @@ function ReviewPage() {
   const [message, setMessage] = useState({ type: "idle", text: "" });
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [activeTab, setActiveTab] = useState("summaries");
+  useAutoDismissMessage(message, setMessage);
 
   useEffect(() => {
     loadReviewData();
@@ -1165,19 +1723,19 @@ function ReviewPage() {
           <span className="summary-breadcrumb">Review</span>
           <h1>{currentFolder ? currentFolder.folderName : "Review Center"}</h1>
           <p>{currentFolder ? "Review saved content from this folder." : "Review your saved summaries and marked questions"}</p>
+          {currentFolder && (
+            <button
+              className="review-back-button"
+              type="button"
+              onClick={() => {
+                setSelectedFolder(null);
+                setActiveTab("summaries");
+              }}
+            >
+              ← Back to Review Center
+            </button>
+          )}
         </div>
-        {currentFolder && (
-          <button
-            className="review-back-button"
-            type="button"
-            onClick={() => {
-              setSelectedFolder(null);
-              setActiveTab("summaries");
-            }}
-          >
-            ← Back to Review Center
-          </button>
-        )}
       </header>
 
       {message.text && (
@@ -1314,17 +1872,37 @@ function PdfViewerModal({ document, onClose }) {
   const [currentPage, setCurrentPage] = useState(1);
   const pageRefs = useRef([]);
   const viewerRef = useRef(null);
-  const pdfUrl = `/api/documents/${document.documentId}/pdf`;
-  const downloadUrl = `${pdfUrl}?download=1`;
+  const documentId = document.documentId || document.id;
+  const pdfUrl = document.pdfUrl || (documentId ? `/api/documents/${documentId}/pdf` : "");
+  const downloadUrl = pdfUrl ? `${pdfUrl}?download=1` : "#";
 
   useEffect(() => {
     let cancelled = false;
-    const loadingTask = pdfjsLib.getDocument(pdfUrl);
+    let loadingTask;
 
     async function loadPdf() {
       try {
         setStatus("loading");
         setError("");
+        setPdfDocument(null);
+
+        if (!documentId || !pdfUrl) {
+          console.debug("[PDF Viewer] Missing PDF URL", {
+            documentId,
+            document
+          });
+          throw new Error("PDF URL is missing for this document.");
+        }
+
+        console.debug("[PDF Viewer] Loading PDF", {
+          documentId,
+          storedFileName: document.storedFileName,
+          filePath: document.filePath,
+          fileUrl: document.fileUrl,
+          pdfUrl
+        });
+
+        loadingTask = pdfjsLib.getDocument({ url: pdfUrl });
         const loadedPdf = await loadingTask.promise;
 
         if (cancelled) {
@@ -1347,9 +1925,9 @@ function PdfViewerModal({ document, onClose }) {
 
     return () => {
       cancelled = true;
-      loadingTask.destroy();
+      loadingTask?.destroy();
     };
-  }, [pdfUrl]);
+  }, [document, documentId, pdfUrl]);
 
   useEffect(() => {
     function handleKeydown(event) {
@@ -1528,6 +2106,11 @@ function SummaryPage() {
     status: "idle",
     message: ""
   });
+  const [deleteState, setDeleteState] = useState({
+    status: "idle",
+    message: ""
+  });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [savedSummary, setSavedSummary] = useState(null);
   const [saveSummaryState, setSaveSummaryState] = useState({
     status: "idle",
@@ -1540,6 +2123,11 @@ function SummaryPage() {
   const [isChatExpanded, setIsChatExpanded] = useState(false);
   const chatRef = useRef(null);
   const chatScrollPositions = useRef({ compact: 0, expanded: 0 });
+  useAutoDismissStatus(quizGeneration, setQuizGeneration);
+  useAutoDismissStatus(flashcardGeneration, setFlashcardGeneration);
+  useAutoDismissStatus(pdfExportState, setPdfExportState);
+  useAutoDismissStatus(deleteState, setDeleteState);
+  useAutoDismissStatus(saveSummaryState, setSaveSummaryState);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1808,6 +2396,41 @@ function SummaryPage() {
     }
   }
 
+  async function handleDeleteSummary() {
+    if (!summaryData?.summary?.id) {
+      return;
+    }
+
+    try {
+      setDeleteState({ status: "loading", message: "Deleting summary..." });
+      const response = await fetch(`/api/summaries/${summaryData.summary.id}`, {
+        method: "DELETE"
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to delete summary.");
+      }
+
+      setSummaryData((current) => ({
+        ...current,
+        summary: null,
+        questions: [],
+        meta: {
+          ...current.meta,
+          hasSummary: false
+        }
+      }));
+      setSavedSummary(null);
+      setDeleteConfirmOpen(false);
+      setDeleteState({ status: "success", message: data.message || "Summary deleted successfully." });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
+    } catch (deleteError) {
+      setDeleteConfirmOpen(false);
+      setDeleteState({ status: "error", message: deleteError.message || "Unable to delete summary." });
+    }
+  }
+
   async function sendChatMessage(messageOverride = "") {
     const message = String(messageOverride || chatInput).replace(/\s+/g, " ").trim();
 
@@ -1909,7 +2532,7 @@ function SummaryPage() {
   return (
     <div className="summary-page">
       <header className="summary-header">
-        <div>
+        <div className="summary-header-main">
           <span className="summary-breadcrumb">Library &gt; {document.title}</span>
           <h1>{document.title}</h1>
           <div className="summary-meta">
@@ -1917,11 +2540,13 @@ function SummaryPage() {
             <span>{document.pageCount || 23} Pages</span>
             <span>Uploaded on {uploadedDate}</span>
           </div>
+          <div className="summary-status-row">
+            <span className="status-chip">{summary?.status || "No Summary Yet"}</span>
+            <span className="updated-chip">{updatedLabel}</span>
+          </div>
         </div>
 
         <div className="summary-header-actions">
-          <span className="status-chip">{summary?.status || "No Summary Yet"}</span>
-          <span className="updated-chip">{updatedLabel}</span>
           <button className="summary-primary-action" type="button" onClick={handleGenerate} disabled={isRegenerating}>
             <RefreshCw size={17} />
             <span>{isRegenerating ? "Generating" : "Regenerate Summary"}</span>
@@ -1945,6 +2570,15 @@ function SummaryPage() {
           >
             <Download size={19} />
           </button>
+          <button
+            className="summary-primary-action danger"
+            type="button"
+            onClick={() => setDeleteConfirmOpen(true)}
+            disabled={!summary || deleteState.status === "loading"}
+          >
+            <Trash2 size={17} />
+            <span>Delete Summary</span>
+          </button>
         </div>
       </header>
 
@@ -1960,6 +2594,12 @@ function SummaryPage() {
         </div>
       )}
 
+      {deleteState.status !== "idle" && (
+        <div className={`summary-export-status ${deleteState.status}`}>
+          <span>{deleteState.message}</span>
+        </div>
+      )}
+
       {summaryData.meta?.source === "placeholder" && (
         <div className="summary-note">
           <strong>Using sample study content.</strong>
@@ -1970,31 +2610,28 @@ function SummaryPage() {
       <section className="summary-card">
         <div className="summary-card-heading">
           <div>
-            <span className="summary-section-label">AI Summary</span>
             <h2>AI Summary</h2>
           </div>
-          <div className="summary-segmented" aria-label="Summary length">
-            {["short", "medium", "detailed"].map((option) => (
-              <button
-                className={length === option ? "active" : ""}
-                key={option}
-                onClick={() => setLength(option)}
-                type="button"
-              >
-                {capitalize(option)}
-              </button>
-            ))}
+          <div className="summary-card-controls">
+            <div className="summary-segmented" aria-label="Summary length">
+              {["short", "medium", "detailed"].map((option) => (
+                <button
+                  className={length === option ? "active" : ""}
+                  key={option}
+                  onClick={() => setLength(option)}
+                  type="button"
+                >
+                  {capitalize(option)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         {summary ? (
-          <>
+          <div className={`summary-scroll-panel ${length === "detailed" ? "collapsed" : ""}`}>
             <SummarySections text={summary.content?.[length] || summary.displayedContent} length={length} />
-            <div className="summary-footnote">
-              <span>{capitalize(length)} summary</span>
-              <span>{summary.source === "placeholder" ? "Sample fallback" : "Stored summary"}</span>
-            </div>
-          </>
+          </div>
         ) : (
           <div className="summary-empty">
             <strong>No summary generated yet.</strong>
@@ -2063,7 +2700,6 @@ function SummaryPage() {
           />
         )}
 
-        <a className="view-all-link" href="#quizzes">View all questions</a>
       </section>
 
       <section className="summary-actions-grid">
@@ -2086,6 +2722,17 @@ function SummaryPage() {
           </div>
         </a>
       </section>
+
+      {deleteConfirmOpen && (
+        <ConfirmationModal
+          title="Delete Summary?"
+          message="This will permanently remove the generated summary. The original PDF will remain unchanged."
+          confirmLabel="Delete"
+          isConfirming={deleteState.status === "loading"}
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={handleDeleteSummary}
+        />
+      )}
     </div>
   );
 }
@@ -2101,6 +2748,46 @@ function SummarySections({ text, length }) {
           <p>{section.text}</p>
         </article>
       ))}
+    </div>
+  );
+}
+
+function ConfirmationModal({
+  confirmLabel = "Delete",
+  isConfirming = false,
+  message,
+  onCancel,
+  onConfirm,
+  title
+}) {
+  useEffect(() => {
+    function handleKeydown(event) {
+      if (event.key === "Escape" && !isConfirming) {
+        onCancel();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [isConfirming, onCancel]);
+
+  return (
+    <div className="confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
+      <section className="confirmation-modal">
+        <div>
+          <span className="summary-section-label">Confirm Delete</span>
+          <h2 id="confirmation-title">{title}</h2>
+          <p>{message}</p>
+        </div>
+        <div className="confirmation-actions">
+          <button type="button" onClick={onCancel} disabled={isConfirming}>
+            Cancel
+          </button>
+          <button className="danger" type="button" onClick={onConfirm} disabled={isConfirming}>
+            {isConfirming ? "Deleting" : confirmLabel}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2297,9 +2984,17 @@ function QuizPage() {
   const [error, setError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [answers, setAnswers] = useState({});
+  const [attemptStartedAt, setAttemptStartedAt] = useState(Date.now());
   const [attemptResult, setAttemptResult] = useState(null);
   const [markedQuestions, setMarkedQuestions] = useState({});
   const [markingQuestionId, setMarkingQuestionId] = useState("");
+  const [deleteState, setDeleteState] = useState({
+    status: "idle",
+    message: ""
+  });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [retakeConfirmOpen, setRetakeConfirmOpen] = useState(false);
+  useAutoDismissStatus(deleteState, setDeleteState);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2341,6 +3036,11 @@ function QuizPage() {
       return;
     }
 
+    if (getHashParams().get("retake") === "1") {
+      setMarkedQuestions({});
+      return;
+    }
+
     let cancelled = false;
 
     async function loadMarkedQuestions() {
@@ -2376,6 +3076,32 @@ function QuizPage() {
     };
   }, [quizData?.quiz?.id]);
 
+  useEffect(() => {
+    if (!quizData?.quiz?.id) {
+      return;
+    }
+
+    const params = getHashParams();
+    const savedResult = readQuizResult(quizData.quiz.id);
+
+    if (params.get("review") === "1" && savedResult) {
+      setAnswers(buildAnswersFromResult(savedResult));
+      setAttemptResult({
+        id: savedResult.attemptId || savedResult.completedAt,
+        quizId: savedResult.quizId,
+        score: savedResult.correctCount,
+        totalQuestions: savedResult.totalQuestions,
+        percentage: savedResult.scorePercentage,
+        completedAt: savedResult.completedAt
+      });
+      return;
+    }
+
+    if (params.get("retake") === "1") {
+      resetQuizAttempt({ clearMarked: true });
+    }
+  }, [quizData?.quiz?.id]);
+
   async function handleGenerateQuiz() {
     try {
       setIsGenerating(true);
@@ -2398,6 +3124,7 @@ function QuizPage() {
       setAnswers({});
       setAttemptResult(null);
       setMarkedQuestions({});
+      setAttemptStartedAt(Date.now());
       setStatus("success");
       window.location.hash = `#quizzes?documentId=${data.document.id}&quizId=${data.quiz.id}`;
     } catch (generateError) {
@@ -2414,13 +3141,15 @@ function QuizPage() {
     }
 
     try {
-      const orderedAnswers = quizData.quiz.questions.map((_, index) => answers[index]);
+      const orderedAnswers = quizData.quiz.questions.map((_, index) => (
+        Number.isInteger(answers[index]) ? answers[index] : -1
+      ));
       const response = await fetch(`/api/quizzes/${quizData.quiz.id}/attempt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           answers: orderedAnswers,
-          timeSpentMinutes: 0
+          timeSpentMinutes: Math.round((Date.now() - attemptStartedAt) / 60000)
         })
       });
       const data = await response.json();
@@ -2430,9 +3159,26 @@ function QuizPage() {
       }
 
       setAttemptResult(data.attempt);
+      const result = buildQuizResultPayload({
+        quizData,
+        answers,
+        attempt: data.attempt,
+        timeTakenSeconds: Math.max(0, Math.round((Date.now() - attemptStartedAt) / 1000))
+      });
+      saveQuizResult(result);
       window.dispatchEvent(new Event("studymind:dashboard-refresh"));
     } catch (submitError) {
       setError(submitError.message || "Could not submit quiz attempt.");
+    }
+  }
+
+  function resetQuizAttempt({ clearMarked = false } = {}) {
+    setAnswers({});
+    setAttemptResult(null);
+    setAttemptStartedAt(Date.now());
+
+    if (clearMarked) {
+      setMarkedQuestions({});
     }
   }
 
@@ -2487,8 +3233,48 @@ function QuizPage() {
     }
   }
 
+  async function handleDeleteQuiz() {
+    if (!quizData?.quiz?.id) {
+      return;
+    }
+
+    try {
+      setDeleteState({ status: "loading", message: "Deleting quiz..." });
+      const response = await fetch(`/api/quizzes/${quizData.quiz.id}`, {
+        method: "DELETE"
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to delete quiz.");
+      }
+
+      setQuizData((current) => ({
+        ...current,
+        quiz: null,
+        meta: {
+          ...current.meta,
+          hasQuiz: false,
+          reused: false
+        }
+      }));
+      setAnswers({});
+      setAttemptResult(null);
+      setMarkedQuestions({});
+      setAttemptStartedAt(Date.now());
+      setDeleteConfirmOpen(false);
+      setDeleteState({ status: "success", message: data.message || "Quiz deleted successfully." });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
+    } catch (deleteError) {
+      setDeleteConfirmOpen(false);
+      setDeleteState({ status: "error", message: deleteError.message || "Unable to delete quiz." });
+    }
+  }
+
   const quiz = quizData?.quiz;
   const allAnswered = Boolean(quiz) && quiz.questions.every((_, index) => Number.isInteger(answers[index]));
+  const questionCount = quiz?.questions?.length || 0;
+  const answeredCount = quiz ? quiz.questions.filter((_, index) => Number.isInteger(answers[index])).length : 0;
 
   if (status === "loading") {
     return <QuizSkeleton />;
@@ -2502,16 +3288,42 @@ function QuizPage() {
           <h1>AI Quiz Generator</h1>
           <p>Practice with multiple-choice questions generated from your uploaded study material.</p>
         </div>
-        <button className="summary-primary-action" type="button" onClick={handleGenerateQuiz} disabled={isGenerating}>
-          <RefreshCw size={17} />
-          <span>{isGenerating ? "Generating" : quiz ? "Generate New Quiz" : "Generate Quiz"}</span>
-        </button>
+        <div className="generated-content-actions">
+          <button
+            className="summary-primary-action secondary"
+            type="button"
+            onClick={() => setRetakeConfirmOpen(true)}
+            disabled={!quiz}
+          >
+            <RefreshCw size={17} />
+            <span>Retake Quiz</span>
+          </button>
+          <button className="summary-primary-action" type="button" onClick={handleGenerateQuiz} disabled={isGenerating}>
+            <RefreshCw size={17} />
+            <span>{isGenerating ? "Generating" : quiz ? "Generate New Quiz" : "Generate Quiz"}</span>
+          </button>
+          <button
+            className="summary-primary-action danger"
+            type="button"
+            onClick={() => setDeleteConfirmOpen(true)}
+            disabled={!quiz || deleteState.status === "loading"}
+          >
+            <Trash2 size={17} />
+            <span>Delete Quiz</span>
+          </button>
+        </div>
       </header>
 
       {error && (
         <div className="quiz-alert">
           <strong>Quiz unavailable.</strong>
           <span>{error}</span>
+        </div>
+      )}
+
+      {deleteState.status !== "idle" && (
+        <div className={`summary-export-status ${deleteState.status}`}>
+          <span>{deleteState.message}</span>
         </div>
       )}
 
@@ -2543,11 +3355,19 @@ function QuizPage() {
             </div>
           </section>
 
+          {attemptResult && (
+            <section className="quiz-score-card" aria-label="Quiz score">
+              <span>Score</span>
+              <strong>{attemptResult.score}/{attemptResult.totalQuestions}</strong>
+              <small>{attemptResult.percentage}%</small>
+            </section>
+          )}
+
           <section className="quiz-question-list">
             {quiz.questions.map((question, questionIndex) => (
               <article className="quiz-question-card" key={question.id || question.question}>
                 <div className="quiz-question-top">
-                  <span>Question {questionIndex + 1}</span>
+                  <span>Question {questionIndex + 1} of {questionCount}</span>
                   <div className="quiz-question-actions">
                     <button
                       type="button"
@@ -2576,29 +3396,294 @@ function QuizPage() {
                         disabled={showResult}
                       >
                         <span>{String.fromCharCode(65 + optionIndex)}</span>
-                        {option}
+                        <strong>{option}</strong>
+                        {showResult && isCorrect && <Check className="quiz-result-icon" size={18} aria-label="Correct answer" />}
+                        {isWrongSelected && <X className="quiz-result-icon" size={18} aria-label="Selected wrong answer" />}
                       </button>
                     );
                   })}
                 </div>
                 {attemptResult && (
-                  <p className="quiz-explanation">{question.explanation}</p>
+                  <div className="quiz-explanation">
+                    <span>Explanation</span>
+                    <p>{question.explanation}</p>
+                  </div>
                 )}
               </article>
             ))}
           </section>
 
           <div className="quiz-submit-row">
+            <span className="quiz-submit-status">
+              {attemptResult ? `Score ${attemptResult.percentage}% · ${attemptResult.score}/${attemptResult.totalQuestions} correct` : allAnswered ? "Ready to submit" : `${answeredCount}/${questionCount} answered`}
+            </span>
             {attemptResult && (
-              <strong>
-                Score: {attemptResult.score}/{attemptResult.totalQuestions} ({attemptResult.percentage}%)
-              </strong>
+              <>
+                <a className="quiz-results-link primary" href={`#quiz-results?quizId=${quiz.id}`}>Review Results</a>
+                <button className="quiz-results-link secondary" type="button" onClick={() => setRetakeConfirmOpen(true)}>Retake Quiz</button>
+                <a className="quiz-results-link tertiary" href="#dashboard">Back to Dashboard</a>
+              </>
             )}
-            <button type="button" onClick={handleSubmitAttempt} disabled={!allAnswered || Boolean(attemptResult)}>
-              Submit Quiz
-            </button>
+            {!attemptResult && (
+              <button type="button" onClick={handleSubmitAttempt}>
+                Submit Quiz
+              </button>
+            )}
           </div>
         </>
+      )}
+
+      {retakeConfirmOpen && (
+        <ConfirmationModal
+          title="Retake Quiz?"
+          message="Retake this quiz? Your current answers will be reset."
+          confirmLabel="Retake"
+          onCancel={() => setRetakeConfirmOpen(false)}
+          onConfirm={() => {
+            resetQuizAttempt({ clearMarked: true });
+            setRetakeConfirmOpen(false);
+          }}
+        />
+      )}
+
+      {deleteConfirmOpen && (
+        <ConfirmationModal
+          title="Delete Quiz?"
+          message="This will permanently remove this quiz and its results. The original PDF, summary, and flashcards will remain unchanged."
+          confirmLabel="Delete"
+          isConfirming={deleteState.status === "loading"}
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={handleDeleteQuiz}
+        />
+      )}
+    </div>
+  );
+}
+
+function QuizResultsPage() {
+  const params = getHashParams();
+  const quizId = params.get("quizId");
+  const [filter, setFilter] = useState("all");
+  const [expandedQuestions, setExpandedQuestions] = useState({});
+  const [retakeConfirmOpen, setRetakeConfirmOpen] = useState(false);
+  const [insight, setInsight] = useState("");
+  const [insightStatus, setInsightStatus] = useState("idle");
+  const result = quizId ? readQuizResult(quizId) : null;
+
+  useEffect(() => {
+    setInsight(result?.aiInsight || "");
+    setInsightStatus("idle");
+  }, [result?.quizId]);
+
+  useEffect(() => {
+    if (!result || result.aiInsightGenerated || insightStatus !== "idle") {
+      return undefined;
+    }
+
+    let isActive = true;
+    setInsightStatus("loading");
+
+    fetch(`/api/quizzes/${result.quizId}/insight`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildQuizInsightRequest(result))
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.message || "Unable to generate AI performance insight.");
+        }
+
+        return data;
+      })
+      .then((data) => {
+        if (!isActive || !data.insight) {
+          return;
+        }
+
+        const updatedResult = { ...result, aiInsight: data.insight, aiInsightGenerated: true };
+        saveQuizResult(updatedResult);
+        setInsight(data.insight);
+        setInsightStatus("ready");
+      })
+      .catch(() => {
+        if (isActive) {
+          setInsightStatus("fallback");
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [result?.quizId, insightStatus]);
+
+  if (!result) {
+    return (
+      <div className="quiz-page">
+        <section className="quiz-empty-card">
+          <Brain size={34} />
+          <strong>Quiz results unavailable.</strong>
+          <p>Submit a quiz to generate a detailed result report.</p>
+          <a className="summary-primary-action" href="#quizzes">Back to Quiz</a>
+        </section>
+      </div>
+    );
+  }
+
+  const filteredAnswers = result.answers.filter((answer) => filter === "all" || answer.status === filter);
+  const scoreBand = getScoreBand(result.scorePercentage);
+
+  function toggleQuestion(questionId) {
+    setExpandedQuestions((current) => ({
+      ...current,
+      [questionId]: !current[questionId]
+    }));
+  }
+
+  return (
+    <div className="quiz-results-page">
+      <header className="quiz-header quiz-results-header">
+        <div>
+          <span className="summary-breadcrumb">Quiz Results</span>
+          <div className="quiz-results-title">
+            <Trophy size={28} aria-hidden="true" />
+            <h1>Quiz Review</h1>
+          </div>
+          <p>Review your score, answers, and explanations.</p>
+          <small>Completed {formatDateTime(result.completedAt)}</small>
+        </div>
+        <div className="generated-content-actions">
+          <button className="quiz-action-link primary" type="button" onClick={() => setRetakeConfirmOpen(true)}>
+            <RefreshCw size={17} />
+            <span>Retake Quiz</span>
+          </button>
+          <a className="quiz-action-link secondary" href={`#quizzes?documentId=${result.documentId || ""}&review=1`}>
+            Back to Quiz
+          </a>
+          <a className="quiz-action-link tertiary" href="#dashboard">Dashboard</a>
+        </div>
+      </header>
+
+      <section className="quiz-results-summary">
+        <div className={`quiz-results-score ${scoreBand}`}>
+          <span>Score</span>
+          <small>{result.scorePercentage}%</small>
+          <strong>{result.correctCount} / {result.totalQuestions}</strong>
+          <em>{getScoreLabel(result.scorePercentage)}</em>
+          <p>{getScoreMessage(result.scorePercentage)}</p>
+        </div>
+        <div className="quiz-stat-card correct">
+          <span className="quiz-stat-icon">✓</span>
+          <span>Correct</span>
+          <strong>{result.correctCount}</strong>
+        </div>
+        <div className="quiz-stat-card incorrect">
+          <span className="quiz-stat-icon">×</span>
+          <span>Incorrect</span>
+          <strong>{result.incorrectCount}</strong>
+        </div>
+        <div className="quiz-stat-card unanswered">
+          <span className="quiz-stat-icon">–</span>
+          <span>Unanswered</span>
+          <strong>{result.unansweredCount}</strong>
+        </div>
+        <div className="quiz-stat-card total">
+          <span className="quiz-stat-icon">#</span>
+          <span>Total</span>
+          <strong>{result.totalQuestions}</strong>
+        </div>
+        <div className="quiz-stat-card time">
+          <span className="quiz-stat-icon">⌁</span>
+          <span>Time Taken</span>
+          <strong>{formatDuration(result.timeTakenSeconds)}</strong>
+        </div>
+      </section>
+
+      <section className="quiz-results-grid">
+        <article className="quiz-result-card insight">
+          <span className="summary-section-label">AI Performance Insight</span>
+          <h2>AI Performance Insight</h2>
+          <p>{insight || result.aiInsight}</p>
+          {insightStatus === "loading" && <small>Generating a personalized insight from your answers...</small>}
+        </article>
+      </section>
+
+      <section className="quiz-review-card">
+        <div className="summary-card-heading">
+          <div>
+            <span className="summary-section-label">Question Review</span>
+            <h2>Question Review</h2>
+          </div>
+          <div className="summary-segmented" aria-label="Question review filter">
+            {[
+              ["all", "All"],
+              ["correct", "Correct"],
+              ["incorrect", "Incorrect"],
+              ["unanswered", "Unanswered"]
+            ].map(([value, label]) => (
+              <button className={filter === value ? "active" : ""} key={value} type="button" onClick={() => setFilter(value)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="quiz-review-list">
+          {filteredAnswers.map((answer) => {
+            const expanded = expandedQuestions[answer.questionId];
+
+            return (
+              <article className={`quiz-review-item ${answer.status}`} key={answer.questionId}>
+                <button type="button" onClick={() => toggleQuestion(answer.questionId)}>
+                  <div>
+                    <strong>Question {answer.questionNumber}</strong>
+                    <p>{answer.questionText}</p>
+                    <span className={`quiz-status-badge ${answer.status}`}>{capitalize(answer.status)}</span>
+                  </div>
+                  <ChevronDown size={18} />
+                </button>
+                {expanded && (
+                  <div className="quiz-review-detail">
+                    <div>
+                      <span>Your Answer</span>
+                      <strong className={answer.status === "incorrect" ? "wrong" : ""}>
+                        {answer.selectedAnswerText || "Not answered"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Correct Answer</span>
+                      <strong className="right">{answer.correctAnswerText}</strong>
+                    </div>
+                    <p>{answer.explanation}</p>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="quiz-recommended-actions">
+        <h2>Recommended Action</h2>
+        <div>
+          <a className="summary-primary-action secondary" href={`#quizzes?documentId=${result.documentId || ""}&review=1`}>Review Incorrect Questions</a>
+          <a className="summary-primary-action" href={`#summary?documentId=${result.documentId || ""}`}>Open AI Tutor</a>
+          <button className="summary-primary-action secondary" type="button" onClick={() => setRetakeConfirmOpen(true)}>Retake Quiz</button>
+        </div>
+      </section>
+
+      {retakeConfirmOpen && (
+        <ConfirmationModal
+          title="Retake Quiz?"
+          message="Retake this quiz? Your current answers will be reset."
+          confirmLabel="Retake"
+          onCancel={() => setRetakeConfirmOpen(false)}
+          onConfirm={() => {
+            setRetakeConfirmOpen(false);
+            window.location.hash = `#quizzes?documentId=${result.documentId || ""}&quizId=${result.quizId}&retake=1`;
+          }}
+        />
       )}
     </div>
   );
@@ -2614,6 +3699,24 @@ function FlashcardsPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [savingState, setSavingState] = useState("idle");
+  const [deleteState, setDeleteState] = useState({
+    status: "idle",
+    message: ""
+  });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  useAutoDismissStatus(deleteState, setDeleteState);
+
+  useEffect(() => {
+    if (savingState !== "saved") {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSavingState((current) => (current === "saved" ? "idle" : current));
+    }, TOAST_DISMISS_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [savingState]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2734,6 +3837,44 @@ function FlashcardsPage() {
     }
   }
 
+  async function handleDeleteFlashcards() {
+    if (!deckData?.flashcardSet?.id) {
+      return;
+    }
+
+    try {
+      setDeleteState({ status: "loading", message: "Deleting flashcards..." });
+      const response = await fetch(`/api/flashcards/${deckData.flashcardSet.id}`, {
+        method: "DELETE"
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to delete flashcards.");
+      }
+
+      setDeckData((current) => ({
+        ...current,
+        flashcardSet: null,
+        progress: null,
+        meta: {
+          ...current.meta,
+          hasFlashcards: false,
+          reused: false
+        }
+      }));
+      setCurrentIndex(0);
+      setIsFlipped(false);
+      setSavingState("idle");
+      setDeleteConfirmOpen(false);
+      setDeleteState({ status: "success", message: data.message || "Flashcards deleted successfully." });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
+    } catch (deleteError) {
+      setDeleteConfirmOpen(false);
+      setDeleteState({ status: "error", message: deleteError.message || "Unable to delete flashcards." });
+    }
+  }
+
   const deck = deckData?.flashcardSet;
   const cards = deck?.cards || [];
   const currentCard = cards[currentIndex];
@@ -2751,16 +3892,33 @@ function FlashcardsPage() {
           <h1>AI Flashcards</h1>
           <p>Flip through concise revision cards generated from your uploaded study material.</p>
         </div>
-        <button className="summary-primary-action" type="button" onClick={handleGenerateFlashcards} disabled={isGenerating}>
-          <RefreshCw size={17} />
-          <span>{isGenerating ? "Generating" : deck ? "Generate New Deck" : "Generate Flashcards"}</span>
-        </button>
+        <div className="generated-content-actions">
+          <button className="summary-primary-action" type="button" onClick={handleGenerateFlashcards} disabled={isGenerating}>
+            <RefreshCw size={17} />
+            <span>{isGenerating ? "Generating" : deck ? "Generate New Deck" : "Generate Flashcards"}</span>
+          </button>
+          <button
+            className="summary-primary-action danger"
+            type="button"
+            onClick={() => setDeleteConfirmOpen(true)}
+            disabled={!deck || deleteState.status === "loading"}
+          >
+            <Trash2 size={17} />
+            <span>Delete Flashcards</span>
+          </button>
+        </div>
       </header>
 
       {error && (
         <div className="quiz-alert">
           <strong>Flashcards unavailable.</strong>
           <span>{error}</span>
+        </div>
+      )}
+
+      {deleteState.status !== "idle" && (
+        <div className={`summary-export-status ${deleteState.status}`}>
+          <span>{deleteState.message}</span>
         </div>
       )}
 
@@ -2831,6 +3989,17 @@ function FlashcardsPage() {
           </section>
         </>
       )}
+
+      {deleteConfirmOpen && (
+        <ConfirmationModal
+          title="Delete Flashcards?"
+          message="This will permanently remove the generated flashcards. The original PDF and summary will remain unchanged."
+          confirmLabel="Delete"
+          isConfirming={deleteState.status === "loading"}
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={handleDeleteFlashcards}
+        />
+      )}
     </div>
   );
 }
@@ -2868,6 +4037,7 @@ function DashboardContent({ dashboard, liveStudySeconds = 0 }) {
 
 function StatCard({ icon: Icon, label, value, suffix = "", trend }) {
   const displayValue = typeof value === "number" ? `${value}${suffix}` : value;
+  const trendDisplay = getTrendDisplay(trend);
 
   return (
     <article className="stat-card">
@@ -2877,9 +4047,10 @@ function StatCard({ icon: Icon, label, value, suffix = "", trend }) {
       <div>
         <strong>{displayValue}</strong>
         <span>{label}</span>
-        {trend && (
-          <small className={`stat-trend ${trend.direction === "down" ? "negative" : "positive"}`}>
-            {trend.direction === "down" ? "↓" : "↑"} {trend.label}
+        {trendDisplay && (
+          <small className={`stat-trend ${trendDisplay.className}`}>
+            {trendDisplay.icon ? `${trendDisplay.icon} ` : ""}
+            {trendDisplay.label}
           </small>
         )}
       </div>
@@ -2887,18 +4058,52 @@ function StatCard({ icon: Icon, label, value, suffix = "", trend }) {
   );
 }
 
+function getTrendDisplay(trend) {
+  if (!trend) {
+    return null;
+  }
+
+  const value = Number(trend.value);
+  const direction = String(trend.direction || "").toLowerCase();
+
+  if (direction === "flat" || direction === "same" || value === 0) {
+    return {
+      className: "neutral",
+      icon: "",
+      label: "Same as last week"
+    };
+  }
+
+  if (direction === "down" || value < 0) {
+    return {
+      className: "negative",
+      icon: "↓",
+      label: trend.label || `${Math.abs(value)}% from last week`
+    };
+  }
+
+  return {
+    className: "positive",
+    icon: "↑",
+    label: trend.label || `+${value}% from last week`
+  };
+}
+
 function DailyGoalWidget({ goal, liveStudySeconds }) {
   const [goalState, setGoalState] = useState(() => normalizeGoal(goal));
   const [saveStatus, setSaveStatus] = useState("idle");
   const [saveError, setSaveError] = useState("");
   const studyOptions = [
-    { label: "30 min", value: 30 },
-    ...Array.from({ length: 24 }, (_, index) => ({
+    { label: "30 minutes", value: 30 },
+    ...Array.from({ length: 12 }, (_, index) => ({
       label: index === 0 ? "1 hour" : `${index + 1} hours`,
       value: (index + 1) * 60
     }))
   ];
-  const quizOptions = Array.from({ length: 50 }, (_, index) => index + 1);
+  const quizOptions = Array.from({ length: 20 }, (_, index) => ({
+    label: `${index + 1} ${index === 0 ? "Quiz" : "Quizzes"}`,
+    value: index + 1
+  }));
   const liveMinutes = liveStudySeconds / 60;
   const studyProgress = (goalState.todayStudyMinutes || 0) + liveMinutes;
   const quizProgress = goalState.todayQuizAttempts || 0;
@@ -2942,7 +4147,7 @@ function DailyGoalWidget({ goal, liveStudySeconds }) {
   }
 
   return (
-    <section className={`daily-goal-card ${goalComplete ? "complete" : ""}`}>
+    <section className={`daily-goal-card ${goalComplete ? "complete" : ""}`} id="daily-goal">
       <div className="daily-goal-main">
         <span>Daily Goal</span>
         <strong>{isStudyGoal ? "Study Time Goal" : "Quiz Goal"}</strong>
@@ -2969,25 +4174,19 @@ function DailyGoalWidget({ goal, liveStudySeconds }) {
       </div>
       <div className="daily-goal-custom">
         {isStudyGoal ? (
-          <select
-            aria-label="Study time goal"
-            onChange={(event) => saveGoal({ targetMinutes: Number(event.target.value) })}
+          <GoalDropdown
+            label="Study time goal"
+            options={studyOptions}
+            onChange={(value) => saveGoal({ targetMinutes: value })}
             value={goalState.targetMinutes}
-          >
-            {studyOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
+          />
         ) : (
-          <select
-            aria-label="Quiz goal"
-            onChange={(event) => saveGoal({ targetQuizzes: Number(event.target.value) })}
+          <GoalDropdown
+            label="Quiz goal"
+            options={quizOptions}
+            onChange={(value) => saveGoal({ targetQuizzes: value })}
             value={goalState.targetQuizzes}
-          >
-            {quizOptions.map((value) => (
-              <option key={value} value={value}>{value} {value === 1 ? "quiz" : "quizzes"}</option>
-            ))}
-          </select>
+          />
         )}
       </div>
       <div className="daily-goal-progress">
@@ -2997,11 +4196,90 @@ function DailyGoalWidget({ goal, liveStudySeconds }) {
   );
 }
 
+function GoalDropdown({ className = "", disabled = false, label, options, placeholder = "", value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const selectedOption = options.find((option) => option.value === value) || null;
+  const triggerLabel = selectedOption?.label || placeholder || options[0]?.label || "Select";
+
+  useEffect(() => {
+    function handlePointerDown(event) {
+      if (!dropdownRef.current?.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
+  function handleSelect(option) {
+    if (disabled) {
+      return;
+    }
+
+    onChange(option.value);
+    setIsOpen(false);
+  }
+
+  return (
+    <div className={`goal-dropdown ${className}`} ref={dropdownRef}>
+      <button
+        className="goal-dropdown-trigger"
+        type="button"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        disabled={disabled}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span>{triggerLabel}</span>
+        <ChevronDown size={16} />
+      </button>
+      {isOpen && !disabled && (
+        <div className="goal-dropdown-menu" role="listbox" aria-label={label}>
+          {options.map((option) => {
+            const selected = option.value === selectedOption?.value;
+
+            return (
+              <button
+                className={selected ? "selected" : ""}
+                key={option.value}
+                role="option"
+                aria-selected={selected}
+                type="button"
+                onClick={() => handleSelect(option)}
+              >
+                <span>{option.label}</span>
+                {selected && <strong aria-hidden="true">✓</strong>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MoveFolderDropdown({ disabled = false, label, onChange, options, placeholder, value }) {
+  return (
+    <GoalDropdown
+      className="move-folder-dropdown"
+      disabled={disabled}
+      label={label}
+      onChange={onChange}
+      options={options.map((option) => ({ label: option.name, value: option.id }))}
+      placeholder={placeholder}
+      value={value}
+    />
+  );
+}
+
 function normalizeGoal(goal) {
   return {
     type: goal?.type === "quiz" ? "quiz" : "studyTime",
-    targetMinutes: clamp(goal?.targetMinutes, 30, 24 * 60, 60),
-    targetQuizzes: clamp(goal?.targetQuizzes, 1, 50, 3),
+    targetMinutes: clamp(goal?.targetMinutes, 30, 12 * 60, 60),
+    targetQuizzes: clamp(goal?.targetQuizzes, 1, 20, 3),
     todayStudyMinutes: Number(goal?.todayStudyMinutes || 0),
     todayQuizAttempts: Number(goal?.todayQuizAttempts || 0)
   };
@@ -3039,13 +4317,16 @@ function ProgressCard({ progress }) {
     <section className="panel progress-panel">
       <div className="section-heading">
         <h2>Study Progress</h2>
-        <label className="progress-range-select">
-          <select value={period} onChange={(event) => setPeriod(event.target.value)}>
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
-          </select>
-          <ChevronDown size={16} />
-        </label>
+        <GoalDropdown
+          className="progress-range-dropdown"
+          label="Study progress range"
+          onChange={setPeriod}
+          options={[
+            { value: "week", label: "This Week" },
+            { value: "month", label: "This Month" }
+          ]}
+          value={period}
+        />
       </div>
 
       <div className="metric-switcher" role="tablist" aria-label="Study progress metric">
@@ -3149,10 +4430,10 @@ function ProgressChart({ data, metric }) {
         </g>
         <g className="axis-labels">
           {chart.yLabels.map((label) => (
-            <text key={label.y} x={label.x} y={label.y}>{label.text}</text>
+            <text className="primary-axis-label" key={label.y} x={label.x} y={label.y}>{label.text}</text>
           ))}
           {chart.xLabels.map((label) => (
-            <text key={label.x} x={label.x} y="326">{label.text}</text>
+            <text className="secondary-axis-label" key={label.x} x={label.x} y="326">{label.text}</text>
           ))}
         </g>
         <path className={strokeClass} d={chart.path} />
@@ -3198,7 +4479,7 @@ function buildSingleMetricChart(data, metric) {
         : `${item.label}: ${Math.round(value)}%`
     };
   });
-  const path = buildStraightPath(points);
+  const path = buildSmoothPath(points);
   const yLabels = metric === "studyTime"
     ? [
         { x: 22, y: 58, text: `${maxValue}h` },
@@ -3220,9 +4501,13 @@ function buildSingleMetricChart(data, metric) {
   return { path, points, yLabels, xLabels };
 }
 
-function buildStraightPath(points) {
+function buildSmoothPath(points) {
   if (!points.length) {
     return "";
+  }
+
+  if (points.length === 1) {
+    return `M ${points[0].x} ${points[0].y}`;
   }
 
   return points.reduce((path, point, index) => {
@@ -3230,7 +4515,12 @@ function buildStraightPath(points) {
       return `M ${point.x} ${point.y}`;
     }
 
-    return `${path} L ${point.x} ${point.y}`;
+    const previousPoint = points[index - 1];
+    const controlOffset = Math.max(24, (point.x - previousPoint.x) * 0.45);
+    const controlOneX = previousPoint.x + controlOffset;
+    const controlTwoX = point.x - controlOffset;
+
+    return `${path} C ${controlOneX} ${previousPoint.y}, ${controlTwoX} ${point.y}, ${point.x} ${point.y}`;
   }, "");
 }
 
@@ -3252,6 +4542,18 @@ function formatHours(value) {
 }
 
 function InsightsCard({ insights }) {
+  function handleInsightClick(event, insight) {
+    if (insight.action !== "dailyGoal") {
+      return;
+    }
+
+    event.preventDefault();
+    document.getElementById("daily-goal")?.scrollIntoView({
+      behavior: "smooth",
+      block: "center"
+    });
+  }
+
   return (
     <section className="panel insights-panel">
       <div className="section-heading">
@@ -3264,7 +4566,12 @@ function InsightsCard({ insights }) {
             const Icon = insightIcons[insight.type] || Sparkles;
 
             return (
-              <a className="insight-card" href={insight.href || "#summary"} key={insight.title}>
+              <a
+                className="insight-card"
+                href={insight.href || "#summary"}
+                key={insight.title}
+                onClick={(event) => handleInsightClick(event, insight)}
+              >
                 <div className="mini-icon">
                   <Icon size={18} />
                 </div>
@@ -3287,15 +4594,61 @@ function InsightsCard({ insights }) {
 }
 
 function ContinueLearning({ items }) {
+  const [visibleItems, setVisibleItems] = useState(items.slice(0, 3));
+  const [pendingRemoveItem, setPendingRemoveItem] = useState(null);
+  const [removeState, setRemoveState] = useState({
+    status: "idle",
+    message: ""
+  });
+  useAutoDismissStatus(removeState, setRemoveState);
+
+  useEffect(() => {
+    setVisibleItems(items.slice(0, 3));
+  }, [items]);
+
+  async function handleRemoveItem() {
+    if (!pendingRemoveItem?.subject) {
+      return;
+    }
+
+    try {
+      setRemoveState({ status: "loading", message: "Removing item..." });
+      const response = await fetch("/api/dashboard/continue-learning/hide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject: pendingRemoveItem.subject })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to remove item.");
+      }
+
+      setVisibleItems((current) => current.filter((item) => item.subject !== pendingRemoveItem.subject));
+      setPendingRemoveItem(null);
+      setRemoveState({ status: "success", message: data.message || "Removed from Continue Learning." });
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
+    } catch (removeError) {
+      setPendingRemoveItem(null);
+      setRemoveState({ status: "error", message: removeError.message || "Unable to remove item." });
+    }
+  }
+
   return (
     <section className="continue-section">
       <div className="section-heading">
         <h2>Continue Learning</h2>
       </div>
 
-      {items.length ? (
+      {removeState.status !== "idle" && (
+        <div className={`summary-export-status ${removeState.status}`}>
+          <span>{removeState.message}</span>
+        </div>
+      )}
+
+      {visibleItems.length ? (
         <div className="learning-grid">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <article className="learning-card" key={item.subject}>
               <div className="subject-icon">
                 <BookOpen size={22} />
@@ -3315,6 +4668,7 @@ function ContinueLearning({ items }) {
               <div className="learning-actions">
                 <a className="primary" href={item.summaryHref || "#summary"}>{item.primaryActionLabel || "Continue"}</a>
                 <a className="secondary" href={item.quizHref || "#quizzes"}>Quiz Yourself</a>
+                <button type="button" onClick={() => setPendingRemoveItem(item)}>Remove</button>
               </div>
             </article>
           ))}
@@ -3322,10 +4676,22 @@ function ContinueLearning({ items }) {
       ) : (
         <div className="panel continue-empty">
           <EmptyPanel
-            title="No subjects in progress yet."
-            text="Upload a document or complete a quiz to populate this row with real learning paths."
+            title="No recent study activity yet."
+            text=""
           />
+          <a className="continue-library-link" href="#library">Go To Library</a>
         </div>
+      )}
+
+      {pendingRemoveItem && (
+        <ConfirmationModal
+          title="Remove from Continue Learning?"
+          message="This will remove the item from your dashboard. Your PDFs, summaries, quizzes, flashcards, and folders will remain unchanged."
+          confirmLabel="Remove"
+          isConfirming={removeState.status === "loading"}
+          onCancel={() => setPendingRemoveItem(null)}
+          onConfirm={handleRemoveItem}
+        />
       )}
     </section>
   );
@@ -3344,7 +4710,7 @@ function EmptyPanel({ title, text }) {
   return (
     <div className="empty-panel">
       <strong>{title}</strong>
-      <p>{text}</p>
+      {text && <p>{text}</p>}
     </div>
   );
 }
@@ -3421,6 +4787,82 @@ function formatDate(date) {
   });
 }
 
+function formatDateTime(date) {
+  if (!date) {
+    return "Recently";
+  }
+
+  return new Date(date).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatDuration(seconds) {
+  const totalSeconds = Math.max(0, Number(seconds || 0));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (minutes <= 0) {
+    return `${remainingSeconds}s`;
+  }
+
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
+function getScoreBand(score) {
+  const value = Number(score || 0);
+
+  if (value < 40) {
+    return "low";
+  }
+
+  if (value < 70) {
+    return "mid";
+  }
+
+  return "high";
+}
+
+function getScoreLabel(score) {
+  const value = Number(score || 0);
+
+  if (value >= 80) {
+    return "Excellent";
+  }
+
+  if (value >= 60) {
+    return "Good Progress";
+  }
+
+  if (value >= 40) {
+    return "Needs Practice";
+  }
+
+  return "Review Recommended";
+}
+
+function getScoreMessage(score) {
+  const value = Number(score || 0);
+
+  if (value >= 80) {
+    return "You answered most questions correctly. Review any missed explanations briefly before moving on.";
+  }
+
+  if (value >= 60) {
+    return "You are close. Review the missed explanations, then retake to improve accuracy.";
+  }
+
+  if (value >= 40) {
+    return "Review the incorrect and unanswered questions below before retaking the quiz.";
+  }
+
+  return "You missed or skipped several questions. Review the explanations below before retaking the quiz.";
+}
+
 function formatRelativeTimestamp(date) {
   if (!date) {
     return "Updated recently";
@@ -3457,6 +4899,130 @@ function formatFileSize(bytes) {
   }
 
   return `${(value / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
+}
+
+function normalizeDisplayFileName(value) {
+  return String(value || "")
+    .replace(/\.pdf$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function quizResultStorageKey(quizId) {
+  return `studymind:quiz-result:${quizId}`;
+}
+
+function saveQuizResult(result) {
+  try {
+    localStorage.setItem(quizResultStorageKey(result.quizId), JSON.stringify(result));
+  } catch {
+    // Result navigation still works in-memory during the current page lifecycle.
+  }
+}
+
+function readQuizResult(quizId) {
+  try {
+    const raw = localStorage.getItem(quizResultStorageKey(quizId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildAnswersFromResult(result) {
+  return (result?.answers || []).reduce((mapped, answer) => {
+    if (Number.isInteger(answer.selectedAnswer)) {
+      mapped[answer.questionNumber - 1] = answer.selectedAnswer;
+    }
+
+    return mapped;
+  }, {});
+}
+
+function buildQuizResultPayload({ quizData, answers, attempt, timeTakenSeconds }) {
+  const quiz = quizData.quiz;
+  const completedAt = attempt?.completedAt || new Date().toISOString();
+  const resultAnswers = quiz.questions.map((question, index) => {
+    const selectedAnswer = Number.isInteger(answers[index]) ? answers[index] : null;
+    const isUnanswered = selectedAnswer === null;
+    const isCorrect = !isUnanswered && selectedAnswer === question.correctAnswer;
+    const status = isUnanswered ? "unanswered" : isCorrect ? "correct" : "incorrect";
+
+    return {
+      questionId: question.id || `question-${index + 1}`,
+      questionNumber: index + 1,
+      questionText: question.question,
+      options: question.options,
+      selectedAnswer,
+      selectedAnswerText: selectedAnswer === null ? "" : question.options[selectedAnswer],
+      correctAnswer: question.correctAnswer,
+      correctAnswerText: question.options[question.correctAnswer],
+      explanation: question.explanation,
+      topic: question.topic || question.category || quiz.topic || quiz.subject || "",
+      status
+    };
+  });
+  const correctCount = resultAnswers.filter((answer) => answer.status === "correct").length;
+  const incorrectCount = resultAnswers.filter((answer) => answer.status === "incorrect").length;
+  const unansweredCount = resultAnswers.filter((answer) => answer.status === "unanswered").length;
+  const totalQuestions = resultAnswers.length;
+  const scorePercentage = totalQuestions ? Math.round((correctCount / totalQuestions) * 100) : 0;
+
+  return {
+    quizId: quiz.id,
+    attemptId: attempt?.id || "",
+    documentId: quizData.document?.id || quiz.documentId || "",
+    quizTitle: quiz.title || quizData.document?.title || "StudyMind Quiz",
+    completedAt,
+    totalQuestions,
+    correctCount,
+    incorrectCount,
+    unansweredCount,
+    scorePercentage,
+    timeTakenSeconds,
+    answers: resultAnswers,
+    aiInsight: buildQuizInsight({ scorePercentage, correctCount, incorrectCount, unansweredCount, totalQuestions }),
+    aiInsightGenerated: false
+  };
+}
+
+function buildQuizInsightRequest(result) {
+  return {
+    quizTitle: result.quizTitle,
+    scorePercentage: result.scorePercentage,
+    correctCount: result.correctCount,
+    incorrectCount: result.incorrectCount,
+    unansweredCount: result.unansweredCount,
+    totalQuestions: result.totalQuestions,
+    answers: (result.answers || []).map((answer) => ({
+      questionText: answer.questionText,
+      status: answer.status,
+      selectedAnswerText: answer.selectedAnswerText,
+      correctAnswerText: answer.correctAnswerText,
+      explanation: answer.explanation,
+      topic: answer.topic || answer.category || ""
+    }))
+  };
+}
+
+function buildQuizInsight({ scorePercentage, correctCount, incorrectCount, unansweredCount, totalQuestions }) {
+  if (!totalQuestions) {
+    return "Review the questions answered incorrectly and revisit the related sections in your notes.";
+  }
+
+  if (scorePercentage >= 80) {
+    return `Great work. You answered ${correctCount} of ${totalQuestions} questions correctly and appear confident with this material. Quickly review any missed questions before moving to the next topic. Retake only if you want to reinforce speed and accuracy.`;
+  }
+
+  if (scorePercentage >= 60) {
+    return `You have a good understanding of this quiz, with ${correctCount} correct answers out of ${totalQuestions}. Review the explanations for the ${incorrectCount} incorrect and ${unansweredCount} unanswered questions. A quick retake after reviewing those explanations should improve accuracy.`;
+  }
+
+  if (scorePercentage >= 40) {
+    return `You have a basic understanding, but several answers need more clarity. Review the incorrect and unanswered questions below, then revisit the related notes before retaking the quiz. Focus on why the correct answer is right instead of memorizing the option.`;
+  }
+
+  return `Your score shows that this quiz needs more revision. Start by reviewing the incorrect and unanswered questions below, then retake the quiz after revisiting the related notes. Focus on understanding why each correct answer is right rather than memorizing options.`;
 }
 
 function buildReviewFolderCards(summaryGroups, questionGroups) {
@@ -3511,6 +5077,12 @@ function capitalize(value) {
 }
 
 function splitSummaryIntoSections(text, length) {
+  const structuredSections = parseTopicSections(text);
+
+  if (structuredSections.length) {
+    return structuredSections;
+  }
+
   const sentences = String(text || "")
     .replace(/\s+/g, " ")
     .split(/(?<=[.!?])\s+/)
@@ -3535,24 +5107,31 @@ function splitSummaryIntoSections(text, length) {
     groups.push(current);
   }
 
-  const titles = getSummarySectionTitles(length);
-
   return (groups.length ? groups : [text]).map((group, index) => ({
-    title: titles[index] || `Study Note ${index + 1}`,
+    title: buildTopicTitle(group, index),
     text: group
   }));
 }
 
-function getSummarySectionTitles(length) {
-  if (length === "short") {
-    return ["Overview", "Why It Matters", "Revision Focus"];
+function parseTopicSections(text) {
+  const normalized = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\s*#{2,3}\s+/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+
+  if (!normalized.includes(":")) {
+    return [];
   }
 
-  if (length === "medium") {
-    return ["Overview", "Key Concepts", "How It Works", "Exam Focus"];
-  }
+  const matches = [...normalized.matchAll(/(?:^|\n)\s*([^:\n]{3,90}):\s*([\s\S]*?)(?=\n\s*[^:\n]{3,90}:\s*|$)/g)];
 
-  return ["Overview", "Core Ideas", "Important Details", "Applications", "Revision Strategy", "Exam Focus"];
+  return matches
+    .map((match, index) => ({
+      title: cleanTopicTitle(match[1], index, match[2]),
+      text: cleanDisplaySentence(match[2])
+    }))
+    .filter((section) => section.title && section.text);
 }
 
 function cleanDisplaySentence(sentence) {
@@ -3563,6 +5142,156 @@ function cleanDisplaySentence(sentence) {
     .replace(/\s+\d+[\).]\s*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function buildTopicTitle(text, index) {
+  const cleaned = cleanDisplaySentence(text);
+  const rawTitle = findBestTopicPhrase(cleaned);
+
+  return cleanTopicTitle(rawTitle, index, cleaned);
+}
+
+function cleanTopicTitle(title, index = 0, sectionText = "") {
+  const cleaned = String(title || "")
+    .replace(/^#+\s*/, "")
+    .replace(/^\s*[-–—:;,.]+/, "")
+    .replace(/^\s*\d+[\).:-]\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.;:,!?]+$/g, "");
+
+  if (!cleaned || isBadSummaryHeading(cleaned)) {
+    const fallback = findBestTopicPhrase(sectionText);
+    return fallback && !isBadSummaryHeading(fallback)
+      ? toTitleCase(fallback)
+      : index === 0 ? "Overview" : "Document Topic";
+  }
+
+  return toTitleCase(cleaned.split(/\s+/).slice(0, 8).join(" "));
+}
+
+function findBestTopicPhrase(text) {
+  const cleaned = String(text || "")
+    .replace(/["“”'‘’]/g, "")
+    .replace(/\b(study note\s*\d*|revision strategy|exam focus|important note|learning point|topic\s*\d+|core ideas?|important details?|how it works|why it matters|key concepts?)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return "";
+  }
+
+  const knownConcept = findKnownConceptPhrase(cleaned);
+
+  if (knownConcept) {
+    return knownConcept;
+  }
+
+  const candidates = new Map();
+  const words = cleaned.match(/[A-Za-z][A-Za-z-]*/g) || [];
+
+  for (let index = 0; index < words.length; index += 1) {
+    for (let size = 3; size >= 2; size -= 1) {
+      const phraseWords = words.slice(index, index + size);
+
+      if (phraseWords.length !== size) {
+        continue;
+      }
+
+      if (phraseWords.some((word) => isHeadingStopWord(word))) {
+        continue;
+      }
+
+      const phrase = phraseWords.join(" ");
+      const key = phrase.toLowerCase();
+      const score = (candidates.get(key)?.score || 0) + size + (isTechnicalPhrase(phrase) ? 5 : 0);
+      candidates.set(key, { phrase, score });
+    }
+  }
+
+  const best = [...candidates.values()]
+    .filter((candidate) => !isBadSummaryHeading(candidate.phrase))
+    .sort((a, b) => b.score - a.score || a.phrase.length - b.phrase.length)[0];
+
+  return best?.phrase || "";
+}
+
+function findKnownConceptPhrase(text) {
+  const conceptPatterns = [
+    /\bcloud service models?\b/i,
+    /\bservice models?\b/i,
+    /\bdeployment models?\b/i,
+    /\bvirtualization\b/i,
+    /\bcontainers?\b/i,
+    /\bstorage systems?\b/i,
+    /\bsecurity concepts?\b/i,
+    /\bprocess(?:es)? and threads?\b/i,
+    /\bscheduling algorithms?\b/i,
+    /\bdeadlocks?\b/i,
+    /\bmemory management\b/i,
+    /\bfile systems?\b/i,
+    /\bdatabase fundamentals?\b/i,
+    /\bnormalization\b/i,
+    /\bSQL operations?\b/i,
+    /\btransactions?\b/i,
+    /\bindexing\b/i
+  ];
+
+  for (const pattern of conceptPatterns) {
+    const match = text.match(pattern);
+
+    if (match) {
+      return match[0];
+    }
+  }
+
+  return "";
+}
+
+function isBadSummaryHeading(title) {
+  const normalized = String(title || "").trim().toLowerCase();
+
+  if (/^(study note\s*\d*|revision strategy|exam focus|important note|learning point|topic\s*\d+|core ideas?|important details?|how it works|why it matters|key concepts?)$/.test(normalized)) {
+    return true;
+  }
+
+  if (/^(finally|here|therefore|however|moreover|furthermore|in addition|this means|for example|a public cloud|the|a|an)$/i.test(normalized)) {
+    return true;
+  }
+
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  return wordCount === 1 && !isTechnicalPhrase(normalized);
+}
+
+function isHeadingStopWord(word) {
+  return /^(a|an|the|and|or|but|if|then|this|that|these|those|finally|here|therefore|however|moreover|furthermore|in|on|at|by|from|with|without|inside|outside|into|over|under|between|through|after|before|for|of|to|as|is|are|was|were|be|being|been|can|could|may|might|should|would|will|also|each|every|some|many|such)$/i
+    .test(String(word || ""));
+}
+
+function isTechnicalPhrase(phrase) {
+  return /\b(cloud|service|deployment|model|virtualization|container|storage|security|process|thread|scheduling|algorithm|deadlock|memory|file|database|normalization|SQL|transaction|index|network|architecture|system|computing|resource|server|application|platform|infrastructure|software|data|management)\b/i
+    .test(String(phrase || ""));
+}
+
+function toTitleCase(value) {
+  const smallWords = new Set(["and", "or", "of", "to", "in", "for", "with", "on", "the", "a", "an"]);
+
+  return String(value || "")
+    .split(" ")
+    .map((word, index) => {
+      if (word === word.toUpperCase() && word.length <= 5) {
+        return word;
+      }
+
+      const lower = word.toLowerCase();
+
+      if (index > 0 && smallWords.has(lower)) {
+        return lower;
+      }
+
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
 }
 
 function exportSummaryPdf({ document: documentData, summary, length, summaryText, questions }) {

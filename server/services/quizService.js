@@ -3,7 +3,7 @@ import Document from "../models/Document.js";
 import Quiz from "../models/Quiz.js";
 import QuizAttempt from "../models/QuizAttempt.js";
 import Summary from "../models/Summary.js";
-import { generateQuiz, getActiveAiModelName } from "./aiService.js";
+import { generateQuiz, generateQuizPerformanceInsight, getActiveAiModelName } from "./aiService.js";
 import { isDatabaseConnected } from "../config/db.js";
 import { buildSelectedPdfSource } from "./selectedPdfSourceService.js";
 
@@ -59,7 +59,7 @@ export async function generateQuizForUser(user, payload = {}) {
   const source = selectedSource || await getQuizSource(user.id, document);
   const questionCount = normalizeQuestionCount(payload.questionCount);
   const generated = await generateQuiz(source.text, {
-    documentTitle: source.title || document.title,
+    documentTitle: source.title || getDocumentDisplayName(document),
     subject: source.subject || document.subject,
     questionCount,
     scope: source.scope || "single-document"
@@ -78,7 +78,7 @@ export async function generateQuizForUser(user, payload = {}) {
     folderId: source.folderId || document.folderId || null,
     selectedDocumentIds: source.selectedDocumentIds || [document._id],
     generationType: selectedSource ? "selected" : "single",
-    title: selectedSource ? `${source.title} Quiz` : `${document.title} Quiz`,
+    title: selectedSource ? `${source.title} Quiz` : `${getDocumentDisplayName(document)} Quiz`,
     subject: source.subject || document.subject,
     topic: source.subject || document.subject,
     questionCount: validQuestions.length,
@@ -152,6 +152,91 @@ export async function submitQuizAttemptForUser(user, quizId, payload = {}) {
       completedAt: attempt.completedAt
     }
   };
+}
+
+export async function generateQuizInsightForUser(user, quizId, payload = {}) {
+  if (!user?.id || !isDatabaseConnected()) {
+    const error = new Error("MongoDB is not connected. Quiz insights require stored quizzes.");
+    error.status = 503;
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(quizId)) {
+    const error = new Error("Invalid quiz id.");
+    error.status = 400;
+    throw error;
+  }
+
+  const quiz = await Quiz.findOne({ _id: quizId, userId: user.id }).lean();
+
+  if (!quiz) {
+    const error = new Error("Quiz not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  const generated = await generateQuizPerformanceInsight({
+    quizTitle: payload.quizTitle || quiz.title,
+    scorePercentage: payload.scorePercentage,
+    correctCount: payload.correctCount,
+    incorrectCount: payload.incorrectCount,
+    unansweredCount: payload.unansweredCount,
+    totalQuestions: payload.totalQuestions || quiz.questions.length,
+    answers: normalizeInsightAnswers(payload.answers)
+  });
+  const insight = String(generated?.insight || "").replace(/\s+/g, " ").trim();
+
+  if (!insight) {
+    const error = new Error("AI did not return a quiz performance insight.");
+    error.status = 422;
+    throw error;
+  }
+
+  return { insight };
+}
+
+export async function deleteQuizForUser(user, quizId) {
+  if (!user?.id || !isDatabaseConnected()) {
+    const error = new Error("MongoDB is not connected. Quizzes require stored documents.");
+    error.status = 503;
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(quizId)) {
+    const error = new Error("Invalid quiz id.");
+    error.status = 400;
+    throw error;
+  }
+
+  const quiz = await Quiz.findOneAndDelete({ _id: quizId, userId: user.id }).lean();
+
+  if (!quiz) {
+    const error = new Error("Quiz not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  await QuizAttempt.deleteMany({ userId: user.id, quizId });
+
+  return {
+    deletedQuizId: quizId,
+    message: "Quiz deleted successfully."
+  };
+}
+
+function normalizeInsightAnswers(answers) {
+  if (!Array.isArray(answers)) {
+    return [];
+  }
+
+  return answers.slice(0, QUESTION_MAX).map((answer) => ({
+    questionText: String(answer?.questionText || "").trim(),
+    status: String(answer?.status || "").trim(),
+    selectedAnswerText: String(answer?.selectedAnswerText || "").trim(),
+    correctAnswerText: String(answer?.correctAnswerText || "").trim(),
+    explanation: String(answer?.explanation || "").trim(),
+    topic: String(answer?.topic || answer?.category || "").trim()
+  }));
 }
 
 async function findSelectedDocument(userId, documentId) {
@@ -296,12 +381,22 @@ function mapQuiz(quiz) {
 }
 
 function mapDocument(document) {
+  const displayName = getDocumentDisplayName(document);
+
   return {
     id: document._id.toString(),
-    title: document.title,
+    title: displayName,
+    displayName,
     subject: document.subject,
     pageCount: document.pageCount || 0
   };
+}
+
+function getDocumentDisplayName(document) {
+  return String(document.displayName || document.title || document.originalFileName || "Study Material")
+    .replace(/\.pdf$/i, "")
+    .replace(/\s+/g, " ")
+    .trim() || "Study Material";
 }
 
 function countWords(text) {

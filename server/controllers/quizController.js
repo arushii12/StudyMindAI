@@ -1,4 +1,6 @@
 import {
+  deleteQuizForUser,
+  generateQuizInsightForUser,
   generateQuizForUser,
   getQuizForUser,
   submitQuizAttemptForUser
@@ -28,6 +30,24 @@ export async function submitQuizAttempt(req, res, next) {
   try {
     const attempt = await submitQuizAttemptForUser(req.user, req.params.id, req.body);
     res.status(201).json(attempt);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function generateQuizInsight(req, res, next) {
+  try {
+    const insight = await generateQuizInsightForUser(req.user, req.params.id, req.body);
+    res.json(insight);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteQuiz(req, res, next) {
+  try {
+    const result = await deleteQuizForUser(req.user, req.params.id);
+    res.json(result);
   } catch (error) {
     next(error);
   }

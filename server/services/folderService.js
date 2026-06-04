@@ -203,7 +203,7 @@ export async function listFolderDocumentsForUser(user, folderId) {
     status: { $ne: "archived" }
   })
     .sort({ uploadDate: -1, updatedAt: -1 })
-    .select("title originalFileName storedFileName uploadDate pageCount fileSize status summaryGenerated")
+    .select("title displayName originalFileName storedFileName filePath uploadDate pageCount fileSize status summaryGenerated")
     .lean();
 
   return {
@@ -296,18 +296,41 @@ function mapFolder(folder, documentCount = 0, lastDocumentAt = null) {
 }
 
 function mapFolderDocument(document) {
+  const documentId = document._id.toString();
+  const displayName = getDocumentDisplayName(document);
+
   return {
-    id: document._id.toString(),
-    documentId: document._id.toString(),
-    fileName: document.originalFileName || document.title,
-    title: document.title,
+    id: documentId,
+    documentId,
+    fileName: displayName,
+    title: displayName,
+    displayName,
+    originalFileName: document.originalFileName,
     storedFileName: document.storedFileName,
+    filePath: document.filePath,
+    pdfUrl: buildPdfUrl(documentId),
+    fileUrl: buildStaticFileUrl(document.storedFileName),
     uploadDate: document.uploadDate || document.createdAt,
     pageCount: document.pageCount || 0,
     fileSize: document.fileSize || 0,
     status: document.status,
     summaryStatus: document.summaryGenerated ? "Summary Generated" : "Summary Pending"
   };
+}
+
+function getDocumentDisplayName(document) {
+  return String(document.displayName || document.title || document.originalFileName || "Uploaded Document")
+    .replace(/\.pdf$/i, "")
+    .replace(/\s+/g, " ")
+    .trim() || "Uploaded Document";
+}
+
+function buildPdfUrl(documentId) {
+  return `/api/documents/${documentId}/pdf`;
+}
+
+function buildStaticFileUrl(storedFileName) {
+  return storedFileName ? `/uploads/${encodeURIComponent(storedFileName)}` : "";
 }
 
 function latestDate(left, right) {

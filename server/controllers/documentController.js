@@ -3,6 +3,7 @@ import {
   getDocumentPdfForUser,
   listDocumentsForUser,
   moveDocumentsForUser,
+  renameDocumentForUser,
   uploadDocumentForUser
 } from "../services/documentService.js";
 
@@ -27,6 +28,15 @@ export async function listDocuments(req, res, next) {
 export async function moveDocument(req, res, next) {
   try {
     const result = await moveDocumentsForUser(req.user, [req.params.id], req.body.folderId);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function renameDocument(req, res, next) {
+  try {
+    const result = await renameDocumentForUser(req.user, req.params.id, req.body);
     res.json(result);
   } catch (error) {
     next(error);

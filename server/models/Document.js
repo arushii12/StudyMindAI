@@ -13,6 +13,10 @@ const documentSchema = new mongoose.Schema(
       required: true,
       trim: true
     },
+    displayName: {
+      type: String,
+      trim: true
+    },
     originalFileName: {
       type: String,
       required: true,

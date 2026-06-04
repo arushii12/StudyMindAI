@@ -77,7 +77,7 @@ export async function generateSummaryForUser(user, payload = {}) {
   }
 
   const generated = await generateSummary(sourceText, {
-    documentTitle: selectedSource?.title || document.title,
+    documentTitle: selectedSource?.title || getDocumentDisplayName(document),
     subject: selectedSource?.subject || document.subject,
     scope: selectedSource?.scope || "single-document"
   });
@@ -143,6 +143,33 @@ export async function getQuestionsForSummary(user, summaryId) {
   return questions.map(mapQuestion);
 }
 
+export async function deleteSummaryForUser(user, summaryId) {
+  if (!user?.id || !isDatabaseConnected()) {
+    const error = new Error("MongoDB is not connected. Summaries require stored documents.");
+    error.status = 503;
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(summaryId)) {
+    const error = new Error("Invalid summary id.");
+    error.status = 400;
+    throw error;
+  }
+
+  const result = await Summary.deleteOne({ _id: summaryId, userId: user.id });
+
+  if (!result.deletedCount) {
+    const error = new Error("Summary not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  return {
+    deletedSummaryId: summaryId,
+    message: "Summary deleted successfully."
+  };
+}
+
 export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Study assistant requires stored documents.");
@@ -178,7 +205,7 @@ export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
   }
 
   const generated = await generateStudyAssistantAnswer(notesText, {
-    documentTitle: document.title,
+    documentTitle: getDocumentDisplayName(document),
     subject: document.subject,
     summaryText,
     length,
@@ -251,15 +278,25 @@ function mapSummaryResponse(document, summary, questions, requestedLength) {
 }
 
 function mapDocument(document) {
+  const displayName = getDocumentDisplayName(document);
+
   return {
     id: document._id?.toString?.() || document.id,
-    title: document.title,
+    title: displayName,
+    displayName,
     subject: document.subject,
     fileType: document.fileType,
     pageCount: document.pageCount || 0,
     uploadedAt: document.createdAt || document.uploadedAt,
     updatedAt: document.updatedAt
   };
+}
+
+function getDocumentDisplayName(document) {
+  return String(document.displayName || document.title || document.originalFileName || "Study Material")
+    .replace(/\.pdf$/i, "")
+    .replace(/\s+/g, " ")
+    .trim() || "Study Material";
 }
 
 function mapQuestion(question) {
@@ -318,6 +355,12 @@ function validateSummaryContent(content = {}) {
     throw error;
   }
 
+  if (hasGenericSummaryHeadings(normalized.short) || hasGenericSummaryHeadings(normalized.medium) || hasGenericSummaryHeadings(normalized.detailed)) {
+    const error = new Error("AI returned generic summary headings. Please regenerate.");
+    error.status = 422;
+    throw error;
+  }
+
   return normalized;
 }
 
@@ -341,7 +384,10 @@ function cleanSummaryOutput(text) {
     .replace(/\s+([,.;:!?])/g, "$1")
     .replace(/:\./g, ".")
     .replace(/\.{2,}/g, ".")
-    .replace(/\s+/g, " ")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n")
     .trim();
 }
 
@@ -364,4 +410,13 @@ function hasValidSummaryLengths(content = {}) {
 
 function hasFormattingNoise(text) {
   return /[•●○▪▫]|\s\d+[\).]\s*($|[A-Z])|\s[.;:,]|:\.|\.\./g.test(String(text || ""));
+}
+
+function hasGenericSummaryHeadings(text) {
+  return String(text || "")
+    .split(/\n+/)
+    .some((line) => {
+      const heading = line.split(":")[0]?.trim() || "";
+      return /^(study note\s*\d*|revision strategy|exam focus|important note|learning point|topic\s*\d+|finally|here|therefore|however|moreover|furthermore|in addition|this means|for example|a public cloud)$/i.test(heading);
+    });
 }

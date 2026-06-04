@@ -1,6 +1,7 @@
 import express from "express";
 import {
   chatWithSummary,
+  deleteSummary,
   generateSummary,
   getSummary,
   getSummaryQuestions,
@@ -15,5 +16,6 @@ router.post("/generate", attachCurrentUser, generateSummary);
 router.post("/:documentId/chat", attachCurrentUser, chatWithSummary);
 router.get("/:id/questions", attachCurrentUser, getSummaryQuestions);
 router.post("/:id/regenerate", attachCurrentUser, regenerateSummary);
+router.delete("/:id", attachCurrentUser, deleteSummary);
 
 export default router;

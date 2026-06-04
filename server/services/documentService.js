@@ -49,6 +49,7 @@ export async function uploadDocumentForUser(user, file, payload = {}) {
   const document = await Document.create({
     userId: user.id,
     title,
+    displayName: title,
     originalFileName: file.originalname,
     storedFileName: file.filename,
     subject,
@@ -62,6 +63,15 @@ export async function uploadDocumentForUser(user, file, payload = {}) {
     fileSize: file.size,
     filePath: file.path,
     uploadDate: new Date()
+  });
+
+  console.debug("[PDF Upload]", {
+    documentId: document._id.toString(),
+    originalFileName: document.originalFileName,
+    storedFileName: document.storedFileName,
+    filePath: document.filePath,
+    pdfUrl: buildPdfUrl(document._id),
+    fileUrl: buildStaticFileUrl(document.storedFileName)
   });
 
   const summary = await generateSummaryForUser(user, {
@@ -151,6 +161,69 @@ export async function moveDocumentsForUser(user, documentIds = [], folderId) {
   };
 }
 
+export async function renameDocumentForUser(user, documentId, payload = {}) {
+  ensureUserAndDatabase(user, "MongoDB is not connected. Configure MONGO_URI before renaming PDFs.");
+  validateObjectId(documentId, "Invalid document id.");
+
+  const displayName = cleanDisplayName(payload.displayName ?? payload.title ?? payload.fileName);
+
+  if (!displayName) {
+    const error = new Error("File name cannot be empty.");
+    error.status = 400;
+    throw error;
+  }
+
+  if (displayName.length > 100) {
+    const error = new Error("File name must be 100 characters or fewer.");
+    error.status = 400;
+    throw error;
+  }
+
+  const document = await Document.findOneAndUpdate(
+    {
+      _id: documentId,
+      userId: user.id,
+      status: { $ne: "archived" }
+    },
+    {
+      displayName,
+      title: displayName,
+      updatedAt: new Date()
+    },
+    { new: true }
+  );
+
+  if (!document) {
+    const error = new Error("PDF not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  await Promise.all([
+    SavedSummary.updateMany(
+      { userId: user.id, documentId: document._id },
+      { summaryTitle: displayName }
+    ),
+    Quiz.updateMany(
+      { userId: user.id, documentId: document._id, generationType: { $ne: "selected" } },
+      { title: `${displayName} Quiz` }
+    ),
+    FlashcardSet.updateMany(
+      { userId: user.id, documentId: document._id, generationType: { $ne: "selected" } },
+      { title: `${displayName} Flashcards` }
+    )
+  ]);
+
+  if (document.folderId) {
+    await Folder.updateOne({ _id: document.folderId, userId: user.id }, { updatedAt: new Date() });
+  }
+
+  return {
+    document: mapDocument(document.toObject()),
+    message: "PDF renamed."
+  };
+}
+
 export async function deleteDocumentsForUser(user, documentIds = []) {
   ensureUserAndDatabase(user, "MongoDB is not connected. Configure MONGO_URI before deleting documents.");
   const ids = normalizeDocumentIds(documentIds);
@@ -221,9 +294,18 @@ export async function getDocumentPdfForUser(user, documentId) {
     throw error;
   }
 
+  console.debug("[PDF View]", {
+    documentId: document._id.toString(),
+    originalFileName: document.originalFileName,
+    storedFileName: document.storedFileName,
+    filePath: document.filePath,
+    pdfUrl: buildPdfUrl(document._id),
+    fileUrl: buildStaticFileUrl(document.storedFileName)
+  });
+
   return {
     filePath: document.filePath,
-    fileName: document.originalFileName || `${document.title || "StudyMind PDF"}.pdf`
+    fileName: `${getDocumentDisplayName(document)}.pdf`
   };
 }
 
@@ -318,9 +400,15 @@ function normalizeDocumentIds(documentIds) {
 }
 
 function mapDocument(document) {
+  const documentId = document._id.toString();
+  const displayName = getDocumentDisplayName(document);
+
   return {
-    id: document._id.toString(),
-    title: document.title,
+    id: documentId,
+    documentId,
+    title: displayName,
+    displayName,
+    fileName: displayName,
     subject: document.subject,
     folderId: document.folderId?.toString?.() || null,
     folderName: document.folderName || "",
@@ -330,14 +418,38 @@ function mapDocument(document) {
     pageCount: document.pageCount,
     fileSize: document.fileSize,
     filePath: document.filePath,
+    pdfUrl: buildPdfUrl(documentId),
+    fileUrl: buildStaticFileUrl(document.storedFileName),
     uploadDate: document.uploadDate || document.createdAt,
     summaryStatus: document.summaryGenerated ? "Summary Generated" : "Summary Pending",
     status: document.status
   };
 }
 
+function getDocumentDisplayName(document) {
+  return cleanDisplayName(document.displayName || document.title || stripPdfExtension(document.originalFileName)) || "Uploaded Document";
+}
+
+function buildPdfUrl(documentId) {
+  return `/api/documents/${documentId}/pdf`;
+}
+
+function buildStaticFileUrl(storedFileName) {
+  return storedFileName ? `/uploads/${encodeURIComponent(storedFileName)}` : "";
+}
+
 function cleanTitle(value) {
   return String(value || "Uploaded Document").trim().slice(0, 120) || "Uploaded Document";
+}
+
+function cleanDisplayName(value) {
+  return stripPdfExtension(value)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripPdfExtension(value) {
+  return String(value || "").replace(/\.pdf$/i, "");
 }
 
 function inferSubject(title) {

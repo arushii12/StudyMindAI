@@ -75,7 +75,7 @@ export async function generateFlashcardsForUser(user, payload = {}) {
   const source = selectedSource || await getFlashcardSource(user.id, document);
   const cardCount = normalizeCardCount(payload.cardCount);
   const generated = await generateFlashcards(source.text, {
-    documentTitle: source.title || document.title,
+    documentTitle: source.title || getDocumentDisplayName(document),
     subject: source.subject || document.subject,
     cardCount,
     scope: source.scope || "single-document"
@@ -95,7 +95,7 @@ export async function generateFlashcardsForUser(user, payload = {}) {
     folderId: source.folderId || document.folderId || null,
     selectedDocumentIds: source.selectedDocumentIds || [document._id],
     generationType: selectedSource ? "selected" : "single",
-    title: selectedSource ? `${source.title} Flashcards` : `${document.title} Flashcards`,
+    title: selectedSource ? `${source.title} Flashcards` : `${getDocumentDisplayName(document)} Flashcards`,
     topic: source.subject || document.subject,
     source: source.type,
     aiModel: getActiveAiModelName(),
@@ -230,6 +230,35 @@ export async function getFlashcardProgressForUser(user, setId) {
 
   return {
     progress: mapProgress(progress)
+  };
+}
+
+export async function deleteFlashcardSetForUser(user, setId) {
+  if (!user?.id || !isDatabaseConnected()) {
+    const error = new Error("MongoDB is not connected. Flashcards require stored documents.");
+    error.status = 503;
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(setId)) {
+    const error = new Error("Invalid flashcard set id.");
+    error.status = 400;
+    throw error;
+  }
+
+  const set = await FlashcardSet.findOneAndDelete({ _id: setId, userId: user.id }).lean();
+
+  if (!set) {
+    const error = new Error("Flashcard set not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  await FlashcardProgress.deleteMany({ userId: user.id, flashcardSetId: setId });
+
+  return {
+    deletedFlashcardSetId: setId,
+    message: "Flashcards deleted successfully."
   };
 }
 
@@ -385,12 +414,22 @@ function mapProgress(progress) {
 }
 
 function mapDocument(document) {
+  const displayName = getDocumentDisplayName(document);
+
   return {
     id: document._id.toString(),
-    title: document.title,
+    title: displayName,
+    displayName,
     subject: document.subject,
     pageCount: document.pageCount || 0
   };
+}
+
+function getDocumentDisplayName(document) {
+  return String(document.displayName || document.title || document.originalFileName || "Study Material")
+    .replace(/\.pdf$/i, "")
+    .replace(/\s+/g, " ")
+    .trim() || "Study Material";
 }
 
 function normalizeCardCount(count) {
