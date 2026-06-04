@@ -251,6 +251,9 @@ function buildQuizPerformanceInsightPrompt(context) {
   const compactAnswers = answers.slice(0, 20).map((answer) => ({
     question: String(answer.questionText || "").slice(0, 500),
     status: answer.status,
+    selectedAnswerIndex: Number.isInteger(answer.selectedAnswer) ? answer.selectedAnswer : null,
+    correctAnswerIndex: Number.isInteger(answer.correctAnswer) ? answer.correctAnswer : null,
+    options: Array.isArray(answer.options) ? answer.options.slice(0, 6) : [],
     selectedAnswer: answer.selectedAnswerText || "Not answered",
     correctAnswer: answer.correctAnswerText || "",
     explanation: String(answer.explanation || "").slice(0, 500),
@@ -268,7 +271,9 @@ Rules:
 * Base the insight only on the quiz data below.
 * Mention score pattern, correct/incorrect/unanswered counts, and visible answer patterns.
 * Identify strengths only when supported by correctly answered question text or reliable topic/category metadata.
-* Identify weaknesses only when supported by incorrect or unanswered question text or reliable topic/category metadata.
+* Identify weak topics or concepts needing attention when there are incorrect or unanswered answers.
+* Base weak topics only on incorrect or unanswered question text, explanations, answer choices, or reliable topic/category metadata.
+* Include the weak-topic guidance as a natural sentence, for example: "Topics needing attention include ...".
 * If topic metadata is missing or unreliable, infer gently from question text and avoid pretending certainty.
 * Do not create separate strong/weak area lists.
 * Do not use markdown, bullets, headings, or generic filler.

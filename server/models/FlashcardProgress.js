@@ -8,7 +8,7 @@ const reviewHistorySchema = new mongoose.Schema(
     },
     rating: {
       type: String,
-      enum: ["again", "almost", "got-it"],
+      enum: ["again", "got-it"],
       required: true
     },
     reviewedAt: {

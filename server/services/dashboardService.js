@@ -129,7 +129,9 @@ export async function getDashboardData(user) {
     flashcardActivity,
     hiddenContinueLearningItems,
     quizActivityDays,
-    studyActivityDays
+    studyActivityDays,
+    flashcardsGenerated,
+    studyTimeSummary
   ] = await Promise.all([
     countStoredPdfDocuments(user.id),
     QuizAttempt.aggregate([
@@ -325,6 +327,16 @@ export async function getDashboardData(user) {
           _id: "$dateKey"
         }
       }
+    ]),
+    Flashcard.countDocuments({ userId: userObjectId(user.id) }),
+    StudyActivity.aggregate([
+      { $match: { userId: userObjectId(user.id) } },
+      {
+        $group: {
+          _id: null,
+          totalStudyMinutes: { $sum: "$minutes" }
+        }
+      }
     ])
   ]);
 
@@ -340,6 +352,8 @@ export async function getDashboardData(user) {
     stats: {
       documentsUploaded,
       quizAttempts: summary.attempts || 0,
+      flashcardsGenerated,
+      totalStudyMinutes: Math.round(studyTimeSummary[0]?.totalStudyMinutes || 0),
       averageScore: Math.round(summary.averageScore || 0),
       studyStreak,
       trends: {
@@ -404,7 +418,7 @@ function getDateKey(date) {
 }
 
 function normalizeActivitySource(source) {
-  const allowedSources = new Set(["dashboard", "summary", "library", "quizzes", "flashcards", "analytics"]);
+  const allowedSources = new Set(["dashboard", "summary", "library", "quizzes", "flashcards", "profile"]);
   return allowedSources.has(source) ? source : "dashboard";
 }
 
@@ -449,6 +463,8 @@ function emptyDashboard(user) {
     stats: {
       documentsUploaded: 0,
       quizAttempts: 0,
+      flashcardsGenerated: 0,
+      totalStudyMinutes: 0,
       averageScore: 0,
       studyStreak: 0,
       trends: {

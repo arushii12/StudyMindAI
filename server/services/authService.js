@@ -70,6 +70,71 @@ export async function loginUser(payload = {}) {
   return createAuthPayload(user);
 }
 
+export async function updateUserProfile(userContext, payload = {}) {
+  ensureAuthReady();
+
+  if (!userContext?.id) {
+    const error = new Error("Authentication required.");
+    error.status = 401;
+    throw error;
+  }
+
+  const user = await User.findById(userContext.id).select("+passwordHash");
+
+  if (!user) {
+    const error = new Error("User session is no longer valid.");
+    error.status = 401;
+    throw error;
+  }
+
+  const action = String(payload.action || "").trim();
+
+  if (action === "name") {
+    const name = normalizeName(payload.name);
+
+    if (!name) {
+      throwValidationError("Name is required.", "name");
+    }
+
+    user.name = name;
+  } else if (action === "email") {
+    const email = normalizeEmail(payload.email);
+    validateEmail(email);
+
+    const existing = await User.findOne({ email, _id: { $ne: user._id } }).select("_id");
+
+    if (existing) {
+      throwValidationError("Email already exists.", "email", 409);
+    }
+
+    user.email = email;
+  } else if (action === "password") {
+    const currentPassword = String(payload.currentPassword || "");
+    const password = String(payload.password || "");
+    const confirmPassword = String(payload.confirmPassword || "");
+    const passwordMatches = currentPassword && user.passwordHash
+      ? await bcrypt.compare(currentPassword, user.passwordHash)
+      : false;
+
+    if (!passwordMatches) {
+      throwValidationError("Current password is incorrect.", "currentPassword", 401);
+    }
+
+    validatePassword(password);
+
+    if (password !== confirmPassword) {
+      throwValidationError("Passwords do not match.", "confirmPassword");
+    }
+
+    user.passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  } else {
+    throwValidationError("Choose a valid profile update action.", "action");
+  }
+
+  await user.save();
+  return createAuthPayload(user);
+}
+
 export async function getAuthenticatedUserFromRequest(req) {
   ensureAuthReady();
 

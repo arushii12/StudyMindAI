@@ -37,9 +37,21 @@ export async function submitQuizAttempt(req, res, next) {
 
 export async function generateQuizInsight(req, res, next) {
   try {
+    console.info("Generating quiz insight", {
+      quizId: req.params.id,
+      answerCount: Array.isArray(req.body?.answers) ? req.body.answers.length : 0,
+      correctCount: req.body?.correctCount,
+      incorrectCount: req.body?.incorrectCount,
+      unansweredCount: req.body?.unansweredCount
+    });
     const insight = await generateQuizInsightForUser(req.user, req.params.id, req.body);
     res.json(insight);
   } catch (error) {
+    console.warn("Quiz insight generation failed", {
+      quizId: req.params.id,
+      status: error.status || 500,
+      message: error.message
+    });
     next(error);
   }
 }

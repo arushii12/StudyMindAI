@@ -166,6 +166,8 @@ export async function saveFlashcardReviewForUser(user, setId, payload = {}) {
     throw error;
   }
 
+  await sanitizeLegacyFlashcardRatings(user.id, set._id);
+
   const currentCardIndex = clampIndex(payload.currentCardIndex, set.cards.length);
   const rating = normalizeRating(payload.rating);
   const cardOrder = Math.min(set.cards.length, Math.max(1, Number(payload.cardOrder || currentCardIndex + 1)));
@@ -360,6 +362,8 @@ function normalizeCard(card) {
 }
 
 async function getOrCreateProgress(userId, setId, cardCount) {
+  await sanitizeLegacyFlashcardRatings(userId, setId);
+
   return FlashcardProgress.findOneAndUpdate(
     { userId, flashcardSetId: setId },
     {
@@ -409,7 +413,7 @@ function mapProgress(progress) {
     masteredCount: progress.masteredCount || 0,
     learningCount: progress.learningCount || 0,
     lastStudiedAt: progress.lastStudiedAt,
-    reviewHistory: progress.reviewHistory || []
+    reviewHistory: normalizeReviewHistory(progress.reviewHistory || [])
   };
 }
 
@@ -444,7 +448,23 @@ function normalizeCardCount(count) {
 
 function normalizeRating(rating) {
   const normalized = String(rating || "").toLowerCase();
-  return ["again", "almost", "got-it"].includes(normalized) ? normalized : "";
+  return ["again", "got-it"].includes(normalized) ? normalized : "";
+}
+
+async function sanitizeLegacyFlashcardRatings(userId, setId) {
+  await FlashcardProgress.updateOne(
+    { userId, flashcardSetId: setId, "reviewHistory.rating": "almost" },
+    { $set: { "reviewHistory.$[item].rating": "got-it" } },
+    { arrayFilters: [{ "item.rating": "almost" }] }
+  );
+}
+
+function normalizeReviewHistory(history) {
+  return history.map((item) => ({
+    cardOrder: item.cardOrder,
+    rating: item.rating === "almost" ? "got-it" : item.rating,
+    reviewedAt: item.reviewedAt
+  }));
 }
 
 function clampIndex(index, count) {

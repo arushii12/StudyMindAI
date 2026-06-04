@@ -232,6 +232,9 @@ function normalizeInsightAnswers(answers) {
   return answers.slice(0, QUESTION_MAX).map((answer) => ({
     questionText: String(answer?.questionText || "").trim(),
     status: String(answer?.status || "").trim(),
+    selectedAnswer: Number.isInteger(answer?.selectedAnswer) ? answer.selectedAnswer : null,
+    correctAnswer: Number.isInteger(answer?.correctAnswer) ? answer.correctAnswer : null,
+    options: Array.isArray(answer?.options) ? answer.options.map((option) => String(option || "").trim()).slice(0, 6) : [],
     selectedAnswerText: String(answer?.selectedAnswerText || "").trim(),
     correctAnswerText: String(answer?.correctAnswerText || "").trim(),
     explanation: String(answer?.explanation || "").trim(),

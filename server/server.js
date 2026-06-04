@@ -53,7 +53,8 @@ app.use((error, req, res, next) => {
   }
 
   res.status(status).json({
-    message: error.message || "Something went wrong."
+    message: error.message || "Something went wrong.",
+    field: error.field
   });
 });
 

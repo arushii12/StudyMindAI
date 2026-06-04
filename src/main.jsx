@@ -4,13 +4,14 @@ import { jsPDF } from "jspdf";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
-  BarChart3,
   BookOpen,
   Bookmark,
   Brain,
   ChartNoAxesCombined,
   Check,
   ChevronDown,
+  CircleHelp,
+  ClipboardList,
   Clock3,
   Download,
   FileText,
@@ -20,8 +21,10 @@ import {
   LayoutDashboard,
   Layers,
   LibraryBig,
+  Lightbulb,
   LineChart,
   LogOut,
+  MessageCircle,
   MoreVertical,
   Maximize2,
   Minimize2,
@@ -47,10 +50,11 @@ const navigationItems = [
   { label: "Dashboard", icon: LayoutDashboard, page: "dashboard", href: "#dashboard" },
   { label: "Library", icon: LibraryBig, page: "library", href: "#library" },
   { label: "Summary", icon: FileText, page: "summary", href: "#summary" },
-  { label: "Quizzes", icon: Brain, page: "quizzes", href: "#quizzes" },
   { label: "Flashcards", icon: BookOpen, page: "flashcards", href: "#flashcards" },
+  { label: "Quizzes", icon: Brain, page: "quizzes", href: "#quizzes" },
   { label: "Review", icon: Bookmark, page: "review", href: "#review" },
-  { label: "Analytics", icon: BarChart3, page: "analytics", href: "#analytics" }
+  { label: "How It Works", icon: CircleHelp, page: "how-it-works", href: "#how-it-works" },
+  { label: "Profile", icon: UserCircle, page: "profile", href: "#profile" }
 ];
 
 const statConfig = [
@@ -68,6 +72,7 @@ const insightIcons = {
 };
 
 const TOAST_DISMISS_MS = 5000;
+const QUIZ_INSIGHT_FALLBACK = "We couldn't generate an AI insight for this attempt. Review the incorrect and unanswered questions below, then retake the quiz after revising the summary.";
 
 function App() {
   const [page, setPage] = useState(getPageFromHash());
@@ -142,7 +147,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (auth.status !== "authenticated" || page !== "dashboard") {
+    if (auth.status !== "authenticated" || !["dashboard", "profile"].includes(page)) {
       return undefined;
     }
 
@@ -182,6 +187,11 @@ function App() {
     setDashboard(null);
     setAuth({ status: "authenticated", user: userData });
     window.location.hash = "#dashboard";
+  }
+
+  function handleProfileUpdated(userData) {
+    setAuth({ status: "authenticated", user: userData });
+    setDashboard((current) => current ? { ...current, user: userData } : current);
   }
 
   async function handleLogout() {
@@ -234,6 +244,18 @@ function App() {
           <FlashcardsPage />
         ) : page === "review" ? (
           <ReviewPage />
+        ) : page === "how-it-works" ? (
+          <HowItWorksPage />
+        ) : page === "profile" ? (
+          <ProfilePage
+            user={user}
+            dashboard={dashboard}
+            status={status}
+            error={error}
+            liveStudySeconds={liveStudySeconds}
+            onLogout={handleLogout}
+            onProfileUpdated={handleProfileUpdated}
+          />
         ) : (
           <>
             <Header user={user} uploadState={uploadState} setUploadState={setUploadState} />
@@ -261,6 +283,45 @@ function getHashParams() {
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+}
+
+function getUserInitials(user = {}) {
+  return String(user.name || user.email || "U")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function buildProfileStats(dashboard, liveStudySeconds = 0) {
+  const stats = dashboard?.stats || {};
+  const totalStudyMinutes = Number(stats.totalStudyMinutes || 0) + Math.floor(Number(liveStudySeconds || 0) / 60);
+
+  return [
+    { label: "PDFs Uploaded", value: Number(stats.documentsUploaded || 0) },
+    { label: "Quiz Attempts", value: Number(stats.quizAttempts || 0) },
+    { label: "Flashcards Generated", value: Number(stats.flashcardsGenerated || 0) },
+    { label: "Total Study Time", value: formatStudyMinutes(totalStudyMinutes) },
+    { label: "Average Quiz Score", value: `${Number(stats.averageScore || 0)}%` }
+  ];
+}
+
+function formatStudyMinutes(minutes) {
+  const totalMinutes = Math.max(0, Math.round(Number(minutes || 0)));
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+
+  if (hours <= 0) {
+    return `${totalMinutes}m`;
+  }
+
+  if (remainingMinutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${remainingMinutes}m`;
 }
 
 function useStudyActivityTracker(page, enabled = true) {
@@ -395,12 +456,7 @@ function useAutoDismissStatus(state, setState, duration = TOAST_DISMISS_MS) {
 
 function Sidebar({ user, activePage, collapsed, onLogout, onToggle }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const initials = user.name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const initials = getUserInitials(user);
 
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
@@ -452,10 +508,10 @@ function Sidebar({ user, activePage, collapsed, onLogout, onToggle }) {
         </button>
         {menuOpen && (
           <div className="profile-menu">
-            <div>
+            <a href="#profile" onClick={() => setMenuOpen(false)}>
               <UserCircle size={17} />
               <span>Profile</span>
-            </div>
+            </a>
             <button type="button" onClick={onLogout}>
               <LogOut size={17} />
               <span>Logout</span>
@@ -783,6 +839,9 @@ function Header({ user, uploadState, setUploadState }) {
             accept="application/pdf,.pdf"
             onChange={handleFileChange}
           />
+          <a className="how-link-button" href="#how-it-works">
+            <span>How It Works</span>
+          </a>
           <button
             className="upload-button"
             type="button"
@@ -800,6 +859,320 @@ function Header({ user, uploadState, setUploadState }) {
         </div>
       )}
     </>
+  );
+}
+
+const workflowSteps = [
+  {
+    title: "Upload Documents",
+    description: "Upload your PDFs and organize them into folders for easy access.",
+    icon: Upload,
+    tone: "purple"
+  },
+  {
+    title: "Generate AI Summary",
+    description: "Get concise notes, key points, and important concepts from your documents.",
+    icon: FileText,
+    tone: "green"
+  },
+  {
+    title: "Ask the AI Tutor",
+    description: "Use AI Tutor to clarify doubts and understand difficult topics.",
+    icon: MessageCircle,
+    tone: "blue"
+  },
+  {
+    title: "Review Flashcards",
+    description: "Reinforce your learning with AI-generated flashcards.",
+    icon: BookOpen,
+    tone: "gold"
+  },
+  {
+    title: "Take Quiz",
+    description: "Test your understanding with AI-generated questions.",
+    icon: ClipboardList,
+    tone: "pink"
+  },
+  {
+    title: "Review Weak Topics",
+    description: "Identify your weak areas and revisit the concepts that need improvement.",
+    icon: Target,
+    tone: "orange"
+  },
+  {
+    title: "Track Progress",
+    description: "Monitor your learning activity and performance from the Dashboard and Analytics sections.",
+    icon: LineChart,
+    tone: "teal"
+  }
+];
+
+const studyFlowSteps = [
+  { label: "Upload PDF", description: "Add your study material", icon: Upload, tone: "purple" },
+  { label: "AI Summary", description: "Get key points and notes", icon: FileText, tone: "green" },
+  { label: "AI Tutor", description: "Clarify doubts and concepts", icon: MessageCircle, tone: "blue" },
+  { label: "Flashcards", description: "Review and memorize", icon: BookOpen, tone: "gold" },
+  { label: "Quiz", description: "Test your understanding", icon: ClipboardList, tone: "pink" },
+  { label: "Weak Topics", description: "Focus on areas that need work", icon: Target, tone: "orange" },
+  { label: "Review & Retake", description: "Improve and score higher", icon: LineChart, tone: "teal" }
+];
+
+function HowItWorksPage() {
+  return (
+    <div className="how-page">
+      <header className="how-header">
+        <h1>How It Works ✨</h1>
+        <p>Your AI-powered study workflow, step by step.</p>
+      </header>
+
+      <section className="how-steps-grid" aria-label="StudyMind workflow steps">
+        {workflowSteps.map((step, index) => {
+          const Icon = step.icon;
+          const stepNumber = String(index + 1).padStart(2, "0");
+
+          return (
+            <article className={`how-step-card ${step.tone}`} key={step.title}>
+              <div className="how-icon-square">
+                <Icon size={28} />
+              </div>
+              <div className="how-step-copy">
+                <span>STEP {index + 1}</span>
+                <h2>{step.title}</h2>
+                <p>{step.description}</p>
+              </div>
+              <strong aria-hidden="true">{stepNumber}</strong>
+            </article>
+          );
+        })}
+      </section>
+
+      <section className="how-flow-card">
+        <div className="how-section-heading">
+          <h2>Recommended Study Flow</h2>
+          <p>Follow this proven workflow to master any topic.</p>
+        </div>
+        <div className="how-flow-track" aria-label="Recommended Study Flow">
+          {studyFlowSteps.map((step, index) => {
+            const Icon = step.icon;
+
+            return (
+              <React.Fragment key={step.label}>
+                <div className={`how-flow-item ${step.tone}`}>
+                  <div className="how-flow-icon">
+                    <Icon size={26} />
+                  </div>
+                  <strong>{step.label}</strong>
+                  <span>{step.description}</span>
+                </div>
+                {index < studyFlowSteps.length - 1 && <span className="how-flow-arrow" aria-hidden="true">→</span>}
+              </React.Fragment>
+            );
+          })}
+        </div>
+        <div className="how-return-cycle" aria-hidden="true">
+          <span />
+        </div>
+      </section>
+
+      <section className="how-tip-card">
+        <div className="how-tip-main">
+          <div className="how-tip-icon">
+            <Lightbulb size={28} />
+          </div>
+          <div>
+            <h2>Pro Tip</h2>
+            <p>Consistency is the key! Follow the workflow regularly and use the Weak Topics section to focus your revision.</p>
+          </div>
+        </div>
+        <div className="how-tip-result">
+          <Trophy size={34} />
+          <strong>Small steps every day lead to big results!</strong>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProfilePage({ user, dashboard, status, error, liveStudySeconds = 0, onLogout, onProfileUpdated }) {
+  const [activeAction, setActiveAction] = useState("");
+  const initials = getUserInitials(user);
+  const stats = buildProfileStats(dashboard, liveStudySeconds);
+
+  return (
+    <div className="profile-page">
+      <section className="profile-hero-card">
+        <div className="profile-identity">
+          <div className="profile-avatar-large">{initials}</div>
+          <div>
+            <span className="summary-breadcrumb">Profile</span>
+            <h1>{user.name}</h1>
+            <p>{user.email}</p>
+          </div>
+        </div>
+        <div className="profile-action-row">
+          <button type="button" onClick={() => setActiveAction("name")}>Edit Name</button>
+          <button type="button" onClick={() => setActiveAction("email")}>Change Email</button>
+          <button type="button" onClick={() => setActiveAction("password")}>Change Password</button>
+        </div>
+      </section>
+
+      <section className="profile-overview-card">
+        <div className="profile-section-heading">
+          <span className="summary-section-label">Study Overview</span>
+        </div>
+        {status === "loading" && !dashboard ? (
+          <div className="profile-overview-loading">Loading study overview...</div>
+        ) : status === "error" ? (
+          <div className="profile-overview-loading error">{error || "Unable to load study overview."}</div>
+        ) : (
+          <div className="profile-stats-row" aria-label="Profile study overview">
+            {stats.map((stat) => (
+              <article className="profile-stat-card" key={stat.label}>
+                <span>{stat.label}</span>
+                <strong>{stat.value}</strong>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="profile-logout-card">
+        <div>
+          <span className="summary-section-label">Session</span>
+          <h2>Logout</h2>
+        </div>
+        <button className="profile-logout-button" type="button" onClick={onLogout}>
+          <LogOut size={18} />
+          <span>Logout</span>
+        </button>
+      </section>
+
+      {activeAction && (
+        <ProfileActionModal
+          action={activeAction}
+          user={user}
+          onClose={() => setActiveAction("")}
+          onUpdated={(updatedUser) => {
+            onProfileUpdated(updatedUser);
+            setActiveAction("");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProfileActionModal({ action, user, onClose, onUpdated }) {
+  const config = {
+    name: {
+      title: "Edit Name",
+      submitLabel: "Save Name",
+      initialForm: { name: user.name || "" }
+    },
+    email: {
+      title: "Change Email",
+      submitLabel: "Save Email",
+      initialForm: { email: user.email || "" }
+    },
+    password: {
+      title: "Change Password",
+      submitLabel: "Save Password",
+      initialForm: { currentPassword: "", password: "", confirmPassword: "" }
+    }
+  }[action];
+  const [form, setForm] = useState(config.initialForm);
+  const [errors, setErrors] = useState({});
+  const [message, setMessage] = useState("");
+  const [requestStatus, setRequestStatus] = useState("idle");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const nextErrors = {};
+
+    if (action === "name" && !form.name.trim()) {
+      nextErrors.name = "Name is required.";
+    }
+
+    if (action === "email" && !isValidEmail(form.email)) {
+      nextErrors.email = "Valid email is required.";
+    }
+
+    if (action === "password") {
+      if (!form.currentPassword) {
+        nextErrors.currentPassword = "Current password is required.";
+      }
+
+      if (form.password.length < 8) {
+        nextErrors.password = "Password must be at least 8 characters.";
+      }
+
+      if (form.password !== form.confirmPassword) {
+        nextErrors.confirmPassword = "Passwords do not match.";
+      }
+    }
+
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length) {
+      return;
+    }
+
+    try {
+      setRequestStatus("loading");
+      setMessage("");
+      const response = await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...form })
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (data.field) {
+          setErrors({ [data.field]: data.message || "Unable to update profile." });
+        }
+
+        throw new Error(data.message || "Unable to update profile.");
+      }
+
+      onUpdated(data.user);
+    } catch (updateError) {
+      setMessage(updateError.message || "Unable to update profile.");
+      setRequestStatus("error");
+    }
+  }
+
+  return (
+    <div className="confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="profile-action-title">
+      <form className="profile-action-modal" onSubmit={handleSubmit}>
+        <div className="profile-modal-heading">
+          <h2 id="profile-action-title">{config.title}</h2>
+          <button type="button" onClick={onClose} aria-label="Close profile form">
+            <X size={18} />
+          </button>
+        </div>
+        {message && <div className="auth-message error">{message}</div>}
+        {action === "name" && (
+          <AuthField error={errors.name} label="Name" name="name" value={form.name} onChange={setForm} />
+        )}
+        {action === "email" && (
+          <AuthField error={errors.email} label="Email" name="email" type="email" value={form.email} onChange={setForm} />
+        )}
+        {action === "password" && (
+          <>
+            <AuthField error={errors.currentPassword} label="Current Password" name="currentPassword" type="password" value={form.currentPassword} onChange={setForm} />
+            <AuthField error={errors.password} label="New Password" name="password" type="password" value={form.password} onChange={setForm} />
+            <AuthField error={errors.confirmPassword} label="Confirm New Password" name="confirmPassword" type="password" value={form.confirmPassword} onChange={setForm} />
+          </>
+        )}
+        <div className="profile-modal-actions">
+          <button className="auth-secondary-button" type="button" onClick={onClose}>Cancel</button>
+          <button className="auth-primary-button" type="submit" disabled={requestStatus === "loading"}>
+            {requestStatus === "loading" ? "Saving" : config.submitLabel}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -3469,54 +3842,91 @@ function QuizResultsPage() {
   const [insight, setInsight] = useState("");
   const [insightStatus, setInsightStatus] = useState("idle");
   const result = quizId ? readQuizResult(quizId) : null;
+  const displayedInsight = insightStatus === "fallback" ? QUIZ_INSIGHT_FALLBACK : insight;
 
   useEffect(() => {
-    setInsight(result?.aiInsight || "");
+    setInsight(result?.aiInsightGenerated ? result.aiInsight || "" : "");
     setInsightStatus("idle");
   }, [result?.quizId]);
 
   useEffect(() => {
-    if (!result || result.aiInsightGenerated || insightStatus !== "idle") {
+    if (!result || result.aiInsightGenerated) {
       return undefined;
     }
 
     let isActive = true;
-    setInsightStatus("loading");
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, 15000);
 
-    fetch(`/api/quizzes/${result.quizId}/insight`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildQuizInsightRequest(result))
-    })
-      .then(async (response) => {
+    async function generateInsight() {
+      const payload = buildQuizInsightRequest(result);
+
+      try {
+        setInsightStatus("loading");
+        console.info("Generating quiz AI insight", {
+          quizId: result.quizId,
+          scorePercentage: payload.scorePercentage,
+          correctCount: payload.correctCount,
+          incorrectCount: payload.incorrectCount,
+          unansweredCount: payload.unansweredCount,
+          answerCount: payload.answers.length
+        });
+
+        const response = await fetch(`/api/quizzes/${result.quizId}/insight`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          throw new Error(data.message || "Unable to generate AI performance insight.");
+          throw new Error(data.message || `Unable to generate AI performance insight (${response.status}).`);
         }
 
-        return data;
-      })
-      .then((data) => {
-        if (!isActive || !data.insight) {
+        const nextInsight = String(data.insight || "").trim();
+
+        if (!nextInsight) {
+          throw new Error("AI did not return an insight.");
+        }
+
+        if (!isActive) {
           return;
         }
 
-        const updatedResult = { ...result, aiInsight: data.insight, aiInsightGenerated: true };
+        const updatedResult = { ...result, aiInsight: nextInsight, aiInsightGenerated: true };
         saveQuizResult(updatedResult);
-        setInsight(data.insight);
+        setInsight(nextInsight);
         setInsightStatus("ready");
-      })
-      .catch(() => {
-        if (isActive) {
-          setInsightStatus("fallback");
+      } catch (requestError) {
+        if (!isActive) {
+          return;
         }
-      });
+
+        console.warn("Quiz AI insight generation failed", {
+          quizId: result.quizId,
+          timedOut: requestError.name === "AbortError",
+          message: requestError.name === "AbortError"
+            ? "AI insight generation timed out after 15 seconds."
+            : requestError.message
+        });
+        setInsight("");
+        setInsightStatus("fallback");
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
+    generateInsight();
 
     return () => {
       isActive = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
-  }, [result?.quizId, insightStatus]);
+  }, [result?.quizId]);
 
   if (!result) {
     return (
@@ -3545,7 +3955,6 @@ function QuizResultsPage() {
     <div className="quiz-results-page">
       <header className="quiz-header quiz-results-header">
         <div>
-          <span className="summary-breadcrumb">Quiz Results</span>
           <div className="quiz-results-title">
             <Trophy size={28} aria-hidden="true" />
             <h1>Quiz Review</h1>
@@ -3567,34 +3976,26 @@ function QuizResultsPage() {
 
       <section className="quiz-results-summary">
         <div className={`quiz-results-score ${scoreBand}`}>
-          <span>Score</span>
           <small>{result.scorePercentage}%</small>
           <strong>{result.correctCount} / {result.totalQuestions}</strong>
-          <em>{getScoreLabel(result.scorePercentage)}</em>
-          <p>{getScoreMessage(result.scorePercentage)}</p>
         </div>
         <div className="quiz-stat-card correct">
-          <span className="quiz-stat-icon">✓</span>
           <span>Correct</span>
           <strong>{result.correctCount}</strong>
         </div>
         <div className="quiz-stat-card incorrect">
-          <span className="quiz-stat-icon">×</span>
           <span>Incorrect</span>
           <strong>{result.incorrectCount}</strong>
         </div>
         <div className="quiz-stat-card unanswered">
-          <span className="quiz-stat-icon">–</span>
           <span>Unanswered</span>
           <strong>{result.unansweredCount}</strong>
         </div>
         <div className="quiz-stat-card total">
-          <span className="quiz-stat-icon">#</span>
           <span>Total</span>
           <strong>{result.totalQuestions}</strong>
         </div>
         <div className="quiz-stat-card time">
-          <span className="quiz-stat-icon">⌁</span>
           <span>Time Taken</span>
           <strong>{formatDuration(result.timeTakenSeconds)}</strong>
         </div>
@@ -3604,7 +4005,7 @@ function QuizResultsPage() {
         <article className="quiz-result-card insight">
           <span className="summary-section-label">AI Performance Insight</span>
           <h2>AI Performance Insight</h2>
-          <p>{insight || result.aiInsight}</p>
+          {displayedInsight && <p>{displayedInsight}</p>}
           {insightStatus === "loading" && <small>Generating a personalized insight from your answers...</small>}
         </article>
       </section>
@@ -3698,6 +4099,7 @@ function FlashcardsPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [deckComplete, setDeckComplete] = useState(false);
   const [savingState, setSavingState] = useState("idle");
   const [deleteState, setDeleteState] = useState({
     status: "idle",
@@ -3738,6 +4140,7 @@ function FlashcardsPage() {
         setDeckData(data);
         setCurrentIndex(data.progress?.currentCardIndex || 0);
         setIsFlipped(false);
+        setDeckComplete(false);
         setStatus("success");
       } catch (requestError) {
         if (requestError.name === "AbortError") {
@@ -3775,6 +4178,7 @@ function FlashcardsPage() {
       setDeckData(data);
       setCurrentIndex(0);
       setIsFlipped(false);
+      setDeckComplete(false);
       setStatus("success");
       window.location.hash = `#flashcards?documentId=${data.document.id}&setId=${data.flashcardSet.id}`;
     } catch (generateError) {
@@ -3820,10 +4224,22 @@ function FlashcardsPage() {
 
   function goToCard(nextIndex) {
     const count = deckData?.flashcardSet?.cards?.length || 0;
+
+    if (nextIndex >= count) {
+      const existingRating = getLatestFlashcardRating(deckData?.progress?.reviewHistory || [], currentCard?.order);
+      setCurrentIndex(count);
+      setDeckComplete(true);
+      setIsFlipped(false);
+      saveProgress(Math.max(0, count - 1), existingRating || "got-it");
+      return;
+    }
+
     const safeIndex = Math.min(count - 1, Math.max(0, nextIndex));
+    const existingRating = getLatestFlashcardRating(deckData?.progress?.reviewHistory || [], currentCard?.order);
     setCurrentIndex(safeIndex);
+    setDeckComplete(false);
     setIsFlipped(false);
-    saveProgress(safeIndex);
+    saveProgress(safeIndex, nextIndex > currentIndex ? existingRating || "got-it" : "");
   }
 
   function handleReview(rating) {
@@ -3833,8 +4249,20 @@ function FlashcardsPage() {
 
     if (currentIndex < count - 1) {
       setCurrentIndex(nextIndex);
+      setDeckComplete(false);
+      setIsFlipped(false);
+    } else {
+      setCurrentIndex(count);
+      setDeckComplete(true);
       setIsFlipped(false);
     }
+  }
+
+  function restartDeck() {
+    setCurrentIndex(0);
+    setDeckComplete(false);
+    setIsFlipped(false);
+    saveProgress(0);
   }
 
   async function handleDeleteFlashcards() {
@@ -3865,6 +4293,7 @@ function FlashcardsPage() {
       }));
       setCurrentIndex(0);
       setIsFlipped(false);
+      setDeckComplete(false);
       setSavingState("idle");
       setDeleteConfirmOpen(false);
       setDeleteState({ status: "success", message: data.message || "Flashcards deleted successfully." });
@@ -3878,7 +4307,9 @@ function FlashcardsPage() {
   const deck = deckData?.flashcardSet;
   const cards = deck?.cards || [];
   const currentCard = cards[currentIndex];
-  const progressPercent = cards.length ? Math.round(((currentIndex + 1) / cards.length) * 100) : 0;
+  const completionStats = buildDeckCompletionStats(cards.length, deckData?.progress?.reviewHistory || []);
+  const displayedProgressIndex = deckComplete ? cards.length : Math.min(currentIndex + 1, cards.length);
+  const progressPercent = cards.length ? Math.round((displayedProgressIndex / cards.length) * 100) : 0;
 
   if (status === "loading") {
     return <FlashcardsSkeleton />;
@@ -3933,7 +4364,7 @@ function FlashcardsPage() {
         </section>
       )}
 
-      {deck && currentCard && (
+      {deck && (currentCard || deckComplete) && (
         <>
           <section className="flashcards-info">
             <div>
@@ -3946,7 +4377,7 @@ function FlashcardsPage() {
             </div>
             <div>
               <span>Progress</span>
-              <strong>{currentIndex + 1}/{cards.length}</strong>
+              <strong>{deckComplete ? "Complete" : `${currentIndex + 1}/${cards.length}`}</strong>
             </div>
             <div>
               <span>Status</span>
@@ -3955,37 +4386,48 @@ function FlashcardsPage() {
           </section>
 
           <section className="flashcard-study-area">
-            <button className="flash-nav-button" type="button" onClick={() => goToCard(currentIndex - 1)} disabled={currentIndex === 0}>
-              Previous
-            </button>
+            {deckComplete ? (
+              <DeckCompleteCard
+                documentId={deckData?.document?.id || deck.documentId || documentId}
+                onRestart={restartDeck}
+                stats={completionStats}
+              />
+            ) : (
+              <>
+                <button className="flash-nav-button" type="button" onClick={() => goToCard(currentIndex - 1)} disabled={currentIndex === 0}>
+                  Previous
+                </button>
 
-            <button className={`flashcard-stage ${isFlipped ? "flipped" : ""}`} type="button" onClick={() => setIsFlipped((value) => !value)}>
-              <div className="flashcard-face flashcard-front">
-                <h2>{currentCard.front}</h2>
-                <em>{currentCard.topic || deck.topic}</em>
-                <span>Tap for answer</span>
-              </div>
-              <div className="flashcard-face flashcard-back">
-                <h2>{currentCard.back}</h2>
-                <em>{capitalize(currentCard.difficulty || "medium")}</em>
-                <span>Tap to return</span>
-              </div>
-            </button>
+                <button className={`flashcard-stage ${isFlipped ? "flipped" : ""}`} type="button" onClick={() => setIsFlipped((value) => !value)}>
+                  <div className="flashcard-face flashcard-front">
+                    <h2>{currentCard.front}</h2>
+                    <em>{currentCard.topic || deck.topic}</em>
+                    <span>Tap for answer</span>
+                  </div>
+                  <div className="flashcard-face flashcard-back">
+                    <h2>{currentCard.back}</h2>
+                    <em>{capitalize(currentCard.difficulty || "medium")}</em>
+                    <span>Tap to return</span>
+                  </div>
+                </button>
 
-            <button className="flash-nav-button" type="button" onClick={() => goToCard(currentIndex + 1)} disabled={currentIndex === cards.length - 1}>
-              Next
-            </button>
+                <button className="flash-nav-button" type="button" onClick={() => goToCard(currentIndex + 1)}>
+                  Next
+                </button>
+              </>
+            )}
           </section>
 
           <section className="flashcard-controls">
             <div className="flash-progress">
               <span style={{ width: `${progressPercent}%` }} />
             </div>
-            <div className="flash-review-buttons">
-              <button className="again" type="button" onClick={() => handleReview("again")}>Didn&apos;t Know</button>
-              <button className="almost" type="button" onClick={() => handleReview("almost")}>Almost</button>
-              <button className="got-it" type="button" onClick={() => handleReview("got-it")}>Got It</button>
-            </div>
+            {!deckComplete && (
+              <div className="flash-review-buttons">
+                <button className="again" type="button" onClick={() => handleReview("again")}>Didn&apos;t Know</button>
+                <button className="got-it" type="button" onClick={() => handleReview("got-it")}>Got It</button>
+              </div>
+            )}
           </section>
         </>
       )}
@@ -4002,6 +4444,117 @@ function FlashcardsPage() {
       )}
     </div>
   );
+}
+
+function DeckCompleteCard({ documentId, onRestart, stats }) {
+  const summaryHref = `#summary?documentId=${documentId || ""}`;
+  const quizHref = `#quizzes?documentId=${documentId || ""}`;
+  const insightParts = getDeckCompletionInsight(stats.status);
+
+  return (
+    <article className={`deck-complete-card ${stats.status}`}>
+      <h2>🎉 Deck Complete</h2>
+      <strong>Mastery Score: {stats.mastery}%</strong>
+      <span className="deck-readiness">{getDeckReadinessLabel(stats.status)}</span>
+      <div className="deck-rating-counts" aria-label="Flashcard rating counts">
+        <span>✅ Got It: {stats.gotIt}</span>
+        <span>❌ Didn&apos;t Know: {stats.didntKnow}</span>
+      </div>
+      <p>
+        {insightParts.beforeSummary}
+        {insightParts.includeLinks && <a href={summaryHref}>AI Summary</a>}
+        {insightParts.betweenLinks}
+        {insightParts.includeLinks && <a href={summaryHref}>AI Tutor</a>}
+        {insightParts.afterTutor}
+      </p>
+      <div className="deck-complete-actions">
+        <a className="summary-primary-action" href={quizHref}>Start Quiz</a>
+        <button className="summary-primary-action secondary" type="button" onClick={onRestart}>Restart Deck</button>
+      </div>
+    </article>
+  );
+}
+
+function buildDeckCompletionStats(cardCount, reviewHistory = []) {
+  const latestRatings = new Map();
+
+  reviewHistory.forEach((item) => {
+    const cardOrder = Number(item.cardOrder);
+
+    if (Number.isFinite(cardOrder) && cardOrder >= 1 && cardOrder <= cardCount && item.rating) {
+      latestRatings.set(cardOrder, item.rating);
+    }
+  });
+
+  const ratings = Array.from({ length: cardCount }, (_, index) => latestRatings.get(index + 1) || "got-it");
+  const gotIt = ratings.filter((rating) => rating !== "again").length;
+  const didntKnow = ratings.filter((rating) => rating === "again").length;
+  const mastery = cardCount ? Math.round((gotIt / cardCount) * 100) : 0;
+  const status = mastery >= 80 ? "high" : mastery >= 60 ? "medium" : "low";
+
+  return {
+    gotIt,
+    didntKnow,
+    mastery,
+    status
+  };
+}
+
+function getLatestFlashcardRating(reviewHistory = [], cardOrder) {
+  const targetOrder = Number(cardOrder);
+
+  if (!Number.isFinite(targetOrder)) {
+    return "";
+  }
+
+  for (let index = reviewHistory.length - 1; index >= 0; index -= 1) {
+    const item = reviewHistory[index];
+
+    if (Number(item.cardOrder) === targetOrder && item.rating) {
+      return item.rating;
+    }
+  }
+
+  return "";
+}
+
+function getDeckReadinessLabel(status) {
+  if (status === "high") {
+    return "Quiz Ready";
+  }
+
+  if (status === "medium") {
+    return "Needs Quick Review";
+  }
+
+  return "More Review Recommended";
+}
+
+function getDeckCompletionInsight(status) {
+  if (status === "high") {
+    return {
+      beforeSummary: "Excellent work. You appear ready to test your knowledge.",
+      betweenLinks: "",
+      afterTutor: "",
+      includeLinks: false
+    };
+  }
+
+  if (status === "medium") {
+    return {
+      beforeSummary: "You understand most concepts, but a few areas may need reinforcement. Consider revisiting the ",
+      betweenLinks: " or asking the ",
+      afterTutor: " about any remaining doubts before taking the quiz.",
+      includeLinks: true
+    };
+  }
+
+  return {
+    beforeSummary: "Several concepts were marked as 'Didn't Know'. Review the ",
+    betweenLinks: " and clear any doubts with the ",
+    afterTutor: " before attempting the quiz.",
+    includeLinks: true
+  };
 }
 
 function DashboardContent({ dashboard, liveStudySeconds = 0 }) {
@@ -4827,42 +5380,6 @@ function getScoreBand(score) {
   return "high";
 }
 
-function getScoreLabel(score) {
-  const value = Number(score || 0);
-
-  if (value >= 80) {
-    return "Excellent";
-  }
-
-  if (value >= 60) {
-    return "Good Progress";
-  }
-
-  if (value >= 40) {
-    return "Needs Practice";
-  }
-
-  return "Review Recommended";
-}
-
-function getScoreMessage(score) {
-  const value = Number(score || 0);
-
-  if (value >= 80) {
-    return "You answered most questions correctly. Review any missed explanations briefly before moving on.";
-  }
-
-  if (value >= 60) {
-    return "You are close. Review the missed explanations, then retake to improve accuracy.";
-  }
-
-  if (value >= 40) {
-    return "Review the incorrect and unanswered questions below before retaking the quiz.";
-  }
-
-  return "You missed or skipped several questions. Review the explanations below before retaking the quiz.";
-}
-
 function formatRelativeTimestamp(date) {
   if (!date) {
     return "Updated recently";
@@ -4997,6 +5514,9 @@ function buildQuizInsightRequest(result) {
     answers: (result.answers || []).map((answer) => ({
       questionText: answer.questionText,
       status: answer.status,
+      selectedAnswer: answer.selectedAnswer,
+      correctAnswer: answer.correctAnswer,
+      options: answer.options,
       selectedAnswerText: answer.selectedAnswerText,
       correctAnswerText: answer.correctAnswerText,
       explanation: answer.explanation,
