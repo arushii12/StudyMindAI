@@ -73,6 +73,107 @@ const insightIcons = {
 
 const TOAST_DISMISS_MS = 5000;
 const QUIZ_INSIGHT_FALLBACK = "We couldn't generate an AI insight for this attempt. Review the incorrect and unanswered questions below, then retake the quiz after revising the summary.";
+const longLoadingMessages = [
+  "Analyzing content...",
+  "Extracting key concepts...",
+  "Preparing AI insights...",
+  "Almost ready..."
+];
+
+function LoadingSpinner({ size = "md" }) {
+  return <span className={`loading-spinner ${size}`} aria-hidden="true" />;
+}
+
+function AnimatedDots() {
+  const [dots, setDots] = useState(".");
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setDots((current) => (current.length >= 3 ? "." : `${current}.`));
+    }, 420);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  return <span className="loading-dots" aria-hidden="true">{dots}</span>;
+}
+
+function useLongLoadingMessage(messages = longLoadingMessages, delayMs = 5000, rotateMs = 2600) {
+  const [messageIndex, setMessageIndex] = useState(-1);
+
+  useEffect(() => {
+    const delayId = window.setTimeout(() => setMessageIndex(0), delayMs);
+    let intervalId;
+
+    intervalId = window.setInterval(() => {
+      setMessageIndex((current) => {
+        if (current < 0) {
+          return current;
+        }
+
+        return (current + 1) % messages.length;
+      });
+    }, rotateMs);
+
+    return () => {
+      window.clearTimeout(delayId);
+      window.clearInterval(intervalId);
+    };
+  }, [delayMs, messages, rotateMs]);
+
+  return messageIndex >= 0 ? messages[messageIndex] : "";
+}
+
+function LoadingBanner({
+  title = "Loading",
+  detail = "Please wait while StudyMind prepares this for you.",
+  longMessages = longLoadingMessages,
+  compact = false,
+  className = ""
+}) {
+  const longMessage = useLongLoadingMessage(longMessages);
+  const displayedDetail = longMessage || detail;
+
+  return (
+    <div
+      aria-busy="true"
+      aria-live="polite"
+      className={`loading-banner ${compact ? "compact" : ""} ${className}`.trim()}
+      role="status"
+    >
+      <LoadingSpinner />
+      <div>
+        <strong>{title}<AnimatedDots /></strong>
+        <span>{displayedDetail}</span>
+      </div>
+    </div>
+  );
+}
+
+function LoadingButton({
+  children,
+  isLoading = false,
+  loadingLabel = "Please wait",
+  className = "",
+  disabled,
+  ...props
+}) {
+  return (
+    <button
+      {...props}
+      aria-busy={isLoading ? "true" : undefined}
+      className={`${className} ${isLoading ? "loading-button" : ""}`.trim()}
+      disabled={disabled || isLoading}
+    >
+      {isLoading ? (
+        <>
+          <LoadingSpinner size="sm" />
+          <span>{loadingLabel}<AnimatedDots /></span>
+        </>
+      ) : children}
+    </button>
+  );
+}
 
 function App() {
   const [page, setPage] = useState(getPageFromHash());
@@ -212,7 +313,11 @@ function App() {
             <GraduationCap size={24} />
           </div>
           <strong>StudyMind AI</strong>
-          <span>Restoring your session...</span>
+          <LoadingBanner
+            compact
+            title="Restoring your session"
+            detail="Checking your secure study workspace."
+          />
         </div>
       </div>
     );
@@ -259,7 +364,15 @@ function App() {
         ) : (
           <>
             <Header user={user} uploadState={uploadState} setUploadState={setUploadState} />
-            {status === "loading" && <DashboardSkeleton />}
+            {status === "loading" && (
+              <>
+                <LoadingBanner
+                  title="Loading dashboard"
+                  detail="Gathering your study progress and recent activity."
+                />
+                <DashboardSkeleton />
+              </>
+            )}
             {status === "error" && <ErrorState message={error} />}
             {status === "success" && dashboard && (
               <DashboardContent dashboard={dashboard} liveStudySeconds={liveStudySeconds} />
@@ -628,9 +741,14 @@ function LoginForm({ onAuthenticated, onCreateAccount }) {
         value={form.password}
       />
 
-      <button className="auth-primary-button" type="submit" disabled={status === "loading"}>
-        {status === "loading" ? "Logging in..." : "Login"}
-      </button>
+      <LoadingButton
+        className="auth-primary-button"
+        isLoading={status === "loading"}
+        loadingLabel="Logging in"
+        type="submit"
+      >
+        Login
+      </LoadingButton>
       <button className="auth-secondary-button" type="button" onClick={onCreateAccount}>
         Create Account
       </button>
@@ -740,9 +858,14 @@ function SignupForm({ onAuthenticated, onLogin }) {
         value={form.confirmPassword}
       />
 
-      <button className="auth-primary-button" type="submit" disabled={status === "loading"}>
-        {status === "loading" ? "Creating account..." : "Create Account"}
-      </button>
+      <LoadingButton
+        className="auth-primary-button"
+        isLoading={status === "loading"}
+        loadingLabel="Creating account"
+        type="submit"
+      >
+        Create Account
+      </LoadingButton>
       <button className="auth-secondary-button" type="button" onClick={onLogin}>
         Login
       </button>
@@ -842,18 +965,25 @@ function Header({ user, uploadState, setUploadState }) {
           <a className="how-link-button" href="#how-it-works">
             <span>How It Works</span>
           </a>
-          <button
+          <LoadingButton
             className="upload-button"
-            type="button"
+            isLoading={uploadState.status === "loading"}
+            loadingLabel="Uploading"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploadState.status === "loading"}
+            type="button"
           >
             <Upload size={18} />
-            <span>{uploadState.status === "loading" ? "Uploading" : "Upload"}</span>
-          </button>
+            <span>Upload</span>
+          </LoadingButton>
         </div>
       </header>
-      {uploadState.status !== "idle" && (
+      {uploadState.status === "loading" && (
+        <LoadingBanner
+          title={uploadState.message || "Uploading PDF"}
+          detail="Extracting text and preparing AI study content."
+        />
+      )}
+      {uploadState.status !== "idle" && uploadState.status !== "loading" && (
         <div className={`upload-status ${uploadState.status}`}>
           <span>{uploadState.message}</span>
         </div>
@@ -1021,7 +1151,11 @@ function ProfilePage({ user, dashboard, status, error, liveStudySeconds = 0, onL
           <span className="summary-section-label">Study Overview</span>
         </div>
         {status === "loading" && !dashboard ? (
-          <div className="profile-overview-loading">Loading study overview...</div>
+          <LoadingBanner
+            compact
+            title="Loading study overview"
+            detail="Summarizing your progress and activity."
+          />
         ) : status === "error" ? (
           <div className="profile-overview-loading error">{error || "Unable to load study overview."}</div>
         ) : (
@@ -1167,9 +1301,14 @@ function ProfileActionModal({ action, user, onClose, onUpdated }) {
         )}
         <div className="profile-modal-actions">
           <button className="auth-secondary-button" type="button" onClick={onClose}>Cancel</button>
-          <button className="auth-primary-button" type="submit" disabled={requestStatus === "loading"}>
-            {requestStatus === "loading" ? "Saving" : config.submitLabel}
-          </button>
+          <LoadingButton
+            className="auth-primary-button"
+            isLoading={requestStatus === "loading"}
+            loadingLabel="Saving"
+            type="submit"
+          >
+            {config.submitLabel}
+          </LoadingButton>
         </div>
       </form>
     </div>
@@ -1552,15 +1691,16 @@ function LibraryPage() {
             multiple
             onChange={handlePdfUpload}
           />
-          <button
+          <LoadingButton
             className="upload-button"
-            type="button"
+            isLoading={uploadState === "loading"}
+            loadingLabel="Uploading"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploadState === "loading"}
+            type="button"
           >
             <Upload size={18} />
-            <span>{uploadState === "loading" ? "Uploading" : "Upload PDFs"}</span>
-          </button>
+            <span>Upload PDFs</span>
+          </LoadingButton>
           <button className="library-secondary-action" type="button" onClick={createFolder}>
             <Plus size={18} />
             <span>New Folder</span>
@@ -1568,7 +1708,13 @@ function LibraryPage() {
         </div>
       </header>
 
-      {message.text && (
+      {message.text && message.type === "idle" && (
+        <LoadingBanner
+          title={message.text}
+          detail="Analyzing content and preparing AI insights."
+        />
+      )}
+      {message.text && message.type !== "idle" && (
         <div className={`library-message ${message.type}`}>
           {message.text}
         </div>
@@ -1623,11 +1769,17 @@ function LibraryPage() {
 function FolderGrid({ folders, onDelete, onOpen, onRename, status }) {
   if (status === "loading") {
     return (
-      <section className="folder-grid">
-        {[0, 1, 2].map((item) => (
-          <div className="folder-card skeleton-panel" key={item} />
-        ))}
-      </section>
+      <>
+        <LoadingBanner
+          title="Loading folders"
+          detail="Fetching your study library and folder structure."
+        />
+        <section className="folder-grid" aria-busy="true">
+          {[0, 1, 2].map((item) => (
+            <div className="folder-card skeleton-panel" key={item} />
+          ))}
+        </section>
+      </>
     );
   }
 
@@ -1837,14 +1989,25 @@ function FolderDetailView({
           <strong>Upload PDFs into {folder.name}</strong>
           <span>Drag and drop PDFs here, or use the Upload PDFs button above.</span>
         </div>
-        <button type="button" onClick={() => document.querySelector(".library-actions .file-input")?.click()}>
+        <LoadingButton
+          isLoading={uploadState === "loading"}
+          loadingLabel="Uploading"
+          onClick={() => document.querySelector(".library-actions .file-input")?.click()}
+          type="button"
+        >
           <Upload size={17} />
-          <span>{uploadState === "loading" ? "Uploading" : "Upload PDF"}</span>
-        </button>
+          <span>Upload PDF</span>
+        </LoadingButton>
       </div>
 
       {status === "loading" ? (
-        <div className="pdf-table-card skeleton-panel" />
+        <>
+          <LoadingBanner
+            title="Loading folder"
+            detail="Fetching PDFs and available study actions."
+          />
+          <div className="pdf-table-card skeleton-panel" aria-busy="true" />
+        </>
       ) : documents.length ? (
         <>
           <div className="pdf-selection-toolbar">
@@ -1855,15 +2018,33 @@ function FolderDetailView({
               <span>Selected: {selectedDocumentIds.length} file{selectedDocumentIds.length === 1 ? "" : "s"}</span>
             </div>
             <div className="pdf-ai-actions">
-              <button type="button" onClick={() => onGenerateSelected("summary")} disabled={!selectedDocumentIds.length || aiAction !== "idle"}>
-                {aiAction === "summary" ? "Generating" : "Generate Summary"}
-              </button>
-              <button type="button" onClick={() => onGenerateSelected("quiz")} disabled={!selectedDocumentIds.length || aiAction !== "idle"}>
-                {aiAction === "quiz" ? "Generating" : "Generate Quiz"}
-              </button>
-              <button type="button" onClick={() => onGenerateSelected("flashcards")} disabled={!selectedDocumentIds.length || aiAction !== "idle"}>
-                {aiAction === "flashcards" ? "Generating" : "Generate Flashcards"}
-              </button>
+              <LoadingButton
+                isLoading={aiAction === "summary"}
+                loadingLabel="Generating"
+                onClick={() => onGenerateSelected("summary")}
+                disabled={!selectedDocumentIds.length || aiAction !== "idle"}
+                type="button"
+              >
+                Generate Summary
+              </LoadingButton>
+              <LoadingButton
+                isLoading={aiAction === "quiz"}
+                loadingLabel="Generating"
+                onClick={() => onGenerateSelected("quiz")}
+                disabled={!selectedDocumentIds.length || aiAction !== "idle"}
+                type="button"
+              >
+                Generate Quiz
+              </LoadingButton>
+              <LoadingButton
+                isLoading={aiAction === "flashcards"}
+                loadingLabel="Generating"
+                onClick={() => onGenerateSelected("flashcards")}
+                disabled={!selectedDocumentIds.length || aiAction !== "idle"}
+                type="button"
+              >
+                Generate Flashcards
+              </LoadingButton>
             </div>
             <div>
               <MoveFolderDropdown
@@ -2118,11 +2299,17 @@ function ReviewPage() {
       )}
 
       {status === "loading" ? (
-        <div className="review-folder-grid">
-          <div className="review-folder-card skeleton-panel" />
-          <div className="review-folder-card skeleton-panel" />
-          <div className="review-folder-card skeleton-panel" />
-        </div>
+        <>
+          <LoadingBanner
+            title="Loading review center"
+            detail="Gathering saved summaries and marked questions."
+          />
+          <div className="review-folder-grid" aria-busy="true">
+            <div className="review-folder-card skeleton-panel" />
+            <div className="review-folder-card skeleton-panel" />
+            <div className="review-folder-card skeleton-panel" />
+          </div>
+        </>
       ) : !currentFolder ? (
         folderCards.length ? (
           <section className="review-folder-grid" aria-label="Review folders">
@@ -2374,8 +2561,10 @@ function PdfViewerModal({ document, onClose }) {
         <div className="pdf-viewer-body" ref={viewerRef} onScroll={handleScroll}>
           {status === "loading" && (
             <div className="pdf-viewer-state">
-              <strong>Loading original PDF...</strong>
-              <p>Preparing pages for viewing.</p>
+              <LoadingBanner
+                title="Loading original PDF"
+                detail="Preparing pages for viewing."
+              />
             </div>
           )}
           {status === "error" && (
@@ -2884,7 +3073,15 @@ function SummaryPage() {
   }
 
   if (status === "loading") {
-    return <SummarySkeleton />;
+    return (
+      <>
+        <LoadingBanner
+          title="Loading AI summary"
+          detail="Fetching the document summary and review material."
+        />
+        <SummarySkeleton />
+      </>
+    );
   }
 
   if (status === "error") {
@@ -2920,19 +3117,27 @@ function SummaryPage() {
         </div>
 
         <div className="summary-header-actions">
-          <button className="summary-primary-action" type="button" onClick={handleGenerate} disabled={isRegenerating}>
-            <RefreshCw size={17} />
-            <span>{isRegenerating ? "Generating" : "Regenerate Summary"}</span>
-          </button>
-          <button
-            className="summary-primary-action secondary"
+          <LoadingButton
+            className="summary-primary-action"
+            isLoading={isRegenerating}
+            loadingLabel="Generating"
+            onClick={handleGenerate}
             type="button"
+          >
+            <RefreshCw size={17} />
+            <span>Regenerate Summary</span>
+          </LoadingButton>
+          <LoadingButton
+            className="summary-primary-action secondary"
+            isLoading={saveSummaryState.status === "loading"}
+            loadingLabel={savedSummary ? "Removing" : "Saving"}
             onClick={handleSaveSummaryForReview}
             disabled={!summary || saveSummaryState.status === "loading"}
+            type="button"
           >
             <Bookmark size={19} />
             <span>{savedSummary ? "Saved" : "Save for Revision"}</span>
-          </button>
+          </LoadingButton>
           <button
             className="summary-icon-button"
             type="button"
@@ -2941,7 +3146,7 @@ function SummaryPage() {
             disabled={pdfExportState.status === "loading" || !summary}
             title="Download PDF"
           >
-            <Download size={19} />
+            {pdfExportState.status === "loading" ? <LoadingSpinner size="sm" /> : <Download size={19} />}
           </button>
           <button
             className="summary-primary-action danger"
@@ -2955,19 +3160,47 @@ function SummaryPage() {
         </div>
       </header>
 
-      {pdfExportState.status !== "idle" && (
+      {isRegenerating && (
+        <LoadingBanner
+          title="Generating summary"
+          detail="Analyzing content and preparing AI insights."
+        />
+      )}
+
+      {pdfExportState.status === "loading" && (
+        <LoadingBanner
+          title={pdfExportState.message || "Preparing PDF"}
+          detail="Formatting your summary for download."
+          compact
+        />
+      )}
+      {pdfExportState.status !== "idle" && pdfExportState.status !== "loading" && (
         <div className={`summary-export-status ${pdfExportState.status}`}>
           <span>{pdfExportState.message}</span>
         </div>
       )}
 
-      {saveSummaryState.status !== "idle" && (
+      {saveSummaryState.status === "loading" && (
+        <LoadingBanner
+          title={saveSummaryState.message || "Saving summary"}
+          detail="Updating your review collection."
+          compact
+        />
+      )}
+      {saveSummaryState.status !== "idle" && saveSummaryState.status !== "loading" && (
         <div className={`summary-export-status ${saveSummaryState.status}`}>
           <span>{saveSummaryState.message}</span>
         </div>
       )}
 
-      {deleteState.status !== "idle" && (
+      {deleteState.status === "loading" && (
+        <LoadingBanner
+          title={deleteState.message || "Deleting summary"}
+          detail="Updating your stored study material."
+          compact
+        />
+      )}
+      {deleteState.status !== "idle" && deleteState.status !== "loading" && (
         <div className={`summary-export-status ${deleteState.status}`}>
           <span>{deleteState.message}</span>
         </div>
@@ -3009,10 +3242,15 @@ function SummaryPage() {
           <div className="summary-empty">
             <strong>No summary generated yet.</strong>
             <p>Generate a summary from the selected document to create readable study notes.</p>
-            <button type="button" onClick={handleGenerate} disabled={isRegenerating}>
+            <LoadingButton
+              isLoading={isRegenerating}
+              loadingLabel="Generating"
+              onClick={handleGenerate}
+              type="button"
+            >
               <RefreshCw size={17} />
               <span>Generate Summary</span>
-            </button>
+            </LoadingButton>
           </div>
         )}
       </section>
@@ -3096,6 +3334,19 @@ function SummaryPage() {
         </a>
       </section>
 
+      {quizGeneration.status === "loading" && (
+        <LoadingBanner
+          title={quizGeneration.message || "Generating quiz"}
+          detail="Creating questions, answer choices, and explanations."
+        />
+      )}
+      {flashcardGeneration.status === "loading" && (
+        <LoadingBanner
+          title={flashcardGeneration.message || "Generating flashcards"}
+          detail="Turning key concepts into quick revision cards."
+        />
+      )}
+
       {deleteConfirmOpen && (
         <ConfirmationModal
           title="Delete Summary?"
@@ -3156,9 +3407,15 @@ function ConfirmationModal({
           <button type="button" onClick={onCancel} disabled={isConfirming}>
             Cancel
           </button>
-          <button className="danger" type="button" onClick={onConfirm} disabled={isConfirming}>
-            {isConfirming ? "Deleting" : confirmLabel}
-          </button>
+          <LoadingButton
+            className="danger"
+            isLoading={isConfirming}
+            loadingLabel={confirmLabel === "Delete" ? "Deleting" : "Please wait"}
+            onClick={onConfirm}
+            type="button"
+          >
+            {confirmLabel}
+          </LoadingButton>
         </div>
       </section>
     </div>
@@ -3303,7 +3560,11 @@ function StudyAssistantChat({
         )}
         {status === "loading" && (
           <article className="study-chat-message assistant thinking">
-            <p>Thinking...</p>
+            <LoadingBanner
+              compact
+              title="Thinking"
+              detail="Reading the notes and preparing a helpful answer."
+            />
           </article>
         )}
       </div>
@@ -3319,9 +3580,14 @@ function StudyAssistantChat({
           onKeyDown={handleInputKeyDown}
           disabled={status === "loading"}
         />
-        <button type="submit" disabled={status === "loading" || !input.trim()}>
-          {status === "loading" ? "Thinking" : "Send"}
-        </button>
+        <LoadingButton
+          isLoading={status === "loading"}
+          loadingLabel="Thinking"
+          type="submit"
+          disabled={!input.trim()}
+        >
+          Send
+        </LoadingButton>
       </form>
     </section>
   );
@@ -3650,7 +3916,15 @@ function QuizPage() {
   const answeredCount = quiz ? quiz.questions.filter((_, index) => Number.isInteger(answers[index])).length : 0;
 
   if (status === "loading") {
-    return <QuizSkeleton />;
+    return (
+      <>
+        <LoadingBanner
+          title="Loading AI quiz"
+          detail="Fetching generated questions and review state."
+        />
+        <QuizSkeleton />
+      </>
+    );
   }
 
   return (
@@ -3671,10 +3945,16 @@ function QuizPage() {
             <RefreshCw size={17} />
             <span>Retake Quiz</span>
           </button>
-          <button className="summary-primary-action" type="button" onClick={handleGenerateQuiz} disabled={isGenerating}>
+          <LoadingButton
+            className="summary-primary-action"
+            isLoading={isGenerating}
+            loadingLabel="Generating"
+            onClick={handleGenerateQuiz}
+            type="button"
+          >
             <RefreshCw size={17} />
-            <span>{isGenerating ? "Generating" : quiz ? "Generate New Quiz" : "Generate Quiz"}</span>
-          </button>
+            <span>{quiz ? "Generate New Quiz" : "Generate Quiz"}</span>
+          </LoadingButton>
           <button
             className="summary-primary-action danger"
             type="button"
@@ -3694,7 +3974,21 @@ function QuizPage() {
         </div>
       )}
 
-      {deleteState.status !== "idle" && (
+      {isGenerating && (
+        <LoadingBanner
+          title="Generating quiz"
+          detail="Creating questions, answer choices, and explanations."
+        />
+      )}
+
+      {deleteState.status === "loading" && (
+        <LoadingBanner
+          title={deleteState.message || "Deleting quiz"}
+          detail="Updating your quiz history."
+          compact
+        />
+      )}
+      {deleteState.status !== "idle" && deleteState.status !== "loading" && (
         <div className={`summary-export-status ${deleteState.status}`}>
           <span>{deleteState.message}</span>
         </div>
@@ -3705,9 +3999,14 @@ function QuizPage() {
           <Brain size={34} />
           <strong>No quiz generated yet.</strong>
           <p>Generate an AI quiz from the latest uploaded document or open a document from Summary first.</p>
-          <button type="button" onClick={handleGenerateQuiz} disabled={isGenerating}>
-            {isGenerating ? "Generating Quiz" : "Generate Quiz"}
-          </button>
+          <LoadingButton
+            isLoading={isGenerating}
+            loadingLabel="Generating quiz"
+            onClick={handleGenerateQuiz}
+            type="button"
+          >
+            Generate Quiz
+          </LoadingButton>
         </section>
       )}
 
@@ -4006,7 +4305,13 @@ function QuizResultsPage() {
           <span className="summary-section-label">AI Performance Insight</span>
           <h2>AI Performance Insight</h2>
           {displayedInsight && <p>{displayedInsight}</p>}
-          {insightStatus === "loading" && <small>Generating a personalized insight from your answers...</small>}
+          {insightStatus === "loading" && (
+            <LoadingBanner
+              compact
+              title="Generating performance insight"
+              detail="Reviewing your answers and identifying next steps."
+            />
+          )}
         </article>
       </section>
 
@@ -4312,7 +4617,15 @@ function FlashcardsPage() {
   const progressPercent = cards.length ? Math.round((displayedProgressIndex / cards.length) * 100) : 0;
 
   if (status === "loading") {
-    return <FlashcardsSkeleton />;
+    return (
+      <>
+        <LoadingBanner
+          title="Loading AI flashcards"
+          detail="Fetching your deck and review progress."
+        />
+        <FlashcardsSkeleton />
+      </>
+    );
   }
 
   return (
@@ -4324,10 +4637,16 @@ function FlashcardsPage() {
           <p>Flip through concise revision cards generated from your uploaded study material.</p>
         </div>
         <div className="generated-content-actions">
-          <button className="summary-primary-action" type="button" onClick={handleGenerateFlashcards} disabled={isGenerating}>
+          <LoadingButton
+            className="summary-primary-action"
+            isLoading={isGenerating}
+            loadingLabel="Generating"
+            onClick={handleGenerateFlashcards}
+            type="button"
+          >
             <RefreshCw size={17} />
-            <span>{isGenerating ? "Generating" : deck ? "Generate New Deck" : "Generate Flashcards"}</span>
-          </button>
+            <span>{deck ? "Generate New Deck" : "Generate Flashcards"}</span>
+          </LoadingButton>
           <button
             className="summary-primary-action danger"
             type="button"
@@ -4347,7 +4666,21 @@ function FlashcardsPage() {
         </div>
       )}
 
-      {deleteState.status !== "idle" && (
+      {isGenerating && (
+        <LoadingBanner
+          title="Generating flashcards"
+          detail="Turning key concepts into quick revision cards."
+        />
+      )}
+
+      {deleteState.status === "loading" && (
+        <LoadingBanner
+          title={deleteState.message || "Deleting flashcards"}
+          detail="Updating your saved study materials."
+          compact
+        />
+      )}
+      {deleteState.status !== "idle" && deleteState.status !== "loading" && (
         <div className={`summary-export-status ${deleteState.status}`}>
           <span>{deleteState.message}</span>
         </div>
@@ -4358,9 +4691,14 @@ function FlashcardsPage() {
           <BookOpen size={36} />
           <strong>No flashcards generated yet.</strong>
           <p>Generate AI flashcards from your latest uploaded document or open a document from Summary first.</p>
-          <button type="button" onClick={handleGenerateFlashcards} disabled={isGenerating}>
-            {isGenerating ? "Generating Flashcards" : "Generate Flashcards"}
-          </button>
+          <LoadingButton
+            isLoading={isGenerating}
+            loadingLabel="Generating flashcards"
+            onClick={handleGenerateFlashcards}
+            type="button"
+          >
+            Generate Flashcards
+          </LoadingButton>
         </section>
       )}
 
@@ -4381,9 +4719,17 @@ function FlashcardsPage() {
             </div>
             <div>
               <span>Status</span>
-              <strong>{savingState === "saving" ? "Saving" : savingState === "error" ? "Save failed" : "Saved"}</strong>
+              <strong>{savingState === "saving" ? "Saving..." : savingState === "error" ? "Save failed" : "Saved"}</strong>
             </div>
           </section>
+
+          {savingState === "saving" && (
+            <LoadingBanner
+              compact
+              title="Saving progress"
+              detail="Recording your flashcard review."
+            />
+          )}
 
           <section className="flashcard-study-area">
             {deckComplete ? (
@@ -4706,7 +5052,13 @@ function DailyGoalWidget({ goal, liveStudySeconds }) {
         <strong>{isStudyGoal ? "Study Time Goal" : "Quiz Goal"}</strong>
         <p>{progressLabel}</p>
         {goalComplete && <small>Goal Completed 🎉</small>}
-        {saveStatus === "saving" && <small>Saving goal...</small>}
+        {saveStatus === "saving" && (
+          <LoadingBanner
+            compact
+            title="Saving goal"
+            detail="Updating today's target."
+          />
+        )}
         {saveError && <small className="daily-goal-error">{saveError}</small>}
       </div>
       <div className="daily-goal-options" role="group" aria-label="Goal type">
@@ -5193,7 +5545,14 @@ function ContinueLearning({ items }) {
         <h2>Continue Learning</h2>
       </div>
 
-      {removeState.status !== "idle" && (
+      {removeState.status === "loading" && (
+        <LoadingBanner
+          compact
+          title={removeState.message || "Removing item"}
+          detail="Updating your dashboard preferences."
+        />
+      )}
+      {removeState.status !== "idle" && removeState.status !== "loading" && (
         <div className={`summary-export-status ${removeState.status}`}>
           <span>{removeState.message}</span>
         </div>
