@@ -2907,7 +2907,7 @@ function SummaryPage() {
       <header className="summary-header">
         <div className="summary-header-main">
           <span className="summary-breadcrumb">Library &gt; {document.title}</span>
-          <h1>{document.title}</h1>
+          <h1>AI Summary</h1>
           <div className="summary-meta">
             <span>{formatFileType(document.fileType)} Document</span>
             <span>{document.pageCount || 23} Pages</span>
