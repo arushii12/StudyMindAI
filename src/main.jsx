@@ -6806,23 +6806,54 @@ function exportSummaryPdf({
     cursorY = margin;
   }
 
+  function writeJustifiedLine(line, x, y, width) {
+    const words = String(line || "").trim().split(/\s+/).filter(Boolean);
+
+    if (words.length < 2) {
+      pdf.text(line, x, y);
+      return;
+    }
+
+    const wordsWidth = words.reduce((total, word) => total + pdf.getTextWidth(word), 0);
+    const gapWidth = Math.max(pdf.getTextWidth(" "), (width - wordsWidth) / (words.length - 1));
+    let currentX = x;
+
+    words.forEach((word, index) => {
+      pdf.text(word, currentX, y);
+      currentX += pdf.getTextWidth(word);
+
+      if (index < words.length - 1) {
+        currentX += gapWidth;
+      }
+    });
+  }
+
   function writeWrappedText(text, options = {}) {
     const {
       fontSize = 11,
       lineHeight = 17,
       color = [35, 45, 70],
       style = "normal",
-      indent = 0
+      indent = 0,
+      justify = false
     } = options;
-    const lines = pdf.splitTextToSize(String(text || ""), contentWidth - indent);
+    const textWidth = contentWidth - indent;
+    const lines = pdf.splitTextToSize(String(text || ""), textWidth);
 
     pdf.setFont("helvetica", style);
     pdf.setFontSize(fontSize);
     pdf.setTextColor(...color);
 
-    lines.forEach((line) => {
+    lines.forEach((line, index) => {
       ensureSpace(lineHeight + 2);
-      pdf.text(line, margin + indent, cursorY);
+      const shouldJustify = justify && index < lines.length - 1;
+
+      if (shouldJustify) {
+        writeJustifiedLine(line, margin + indent, cursorY, textWidth);
+      } else {
+        pdf.text(line, margin + indent, cursorY);
+      }
+
       cursorY += lineHeight;
     });
 
@@ -6866,8 +6897,15 @@ function exportSummaryPdf({
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(fontSize);
     pdf.setTextColor(35, 45, 70);
-    lines.forEach((line) => {
-      pdf.text(line, margin + bulletIndent, cursorY);
+    lines.forEach((line, index) => {
+      const shouldJustify = index < lines.length - 1;
+
+      if (shouldJustify) {
+        writeJustifiedLine(line, margin + bulletIndent, cursorY, contentWidth - bulletIndent);
+      } else {
+        pdf.text(line, margin + bulletIndent, cursorY);
+      }
+
       cursorY += lineHeight;
     });
     cursorY += pdfType === "quick" ? 2 : 4;
@@ -6928,7 +6966,8 @@ function exportSummaryPdf({
       writeWrappedText(answer, {
         fontSize: 10.5,
         lineHeight: 16,
-        color: [35, 45, 70]
+        color: [35, 45, 70],
+        justify: true
       });
     }
 
@@ -6990,7 +7029,8 @@ function exportSummaryPdf({
     writeWrappedText("No important questions are available for this summary yet.", {
       fontSize: 11,
       lineHeight: 17,
-      color: [92, 106, 134]
+      color: [92, 106, 134],
+      justify: true
     });
   }
 
