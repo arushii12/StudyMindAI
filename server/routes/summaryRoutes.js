@@ -2,6 +2,7 @@ import express from "express";
 import {
   chatWithSummary,
   deleteSummary,
+  generateSummaryPdfContent,
   generateSummary,
   getSummary,
   getSummaryQuestions,
@@ -13,6 +14,7 @@ const router = express.Router();
 
 router.get("/", attachCurrentUser, getSummary);
 router.post("/generate", attachCurrentUser, generateSummary);
+router.post("/pdf-content", attachCurrentUser, generateSummaryPdfContent);
 router.post("/:documentId/chat", attachCurrentUser, chatWithSummary);
 router.get("/:id/questions", attachCurrentUser, getSummaryQuestions);
 router.post("/:id/regenerate", attachCurrentUser, regenerateSummary);

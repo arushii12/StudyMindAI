@@ -10,7 +10,6 @@ import {
   ChartNoAxesCombined,
   Check,
   ChevronDown,
-  CircleHelp,
   ClipboardList,
   Clock3,
   Download,
@@ -21,6 +20,7 @@ import {
   LayoutDashboard,
   Layers,
   LibraryBig,
+  Laptop,
   Lightbulb,
   LineChart,
   LogOut,
@@ -39,6 +39,7 @@ import {
   Upload,
   UserCircle,
   X,
+  Zap,
   ZoomIn,
   ZoomOut
 } from "lucide-react";
@@ -53,7 +54,7 @@ const navigationItems = [
   { label: "Flashcards", icon: BookOpen, page: "flashcards", href: "#flashcards" },
   { label: "Quizzes", icon: Brain, page: "quizzes", href: "#quizzes" },
   { label: "Review", icon: Bookmark, page: "review", href: "#review" },
-  { label: "How It Works", icon: CircleHelp, page: "how-it-works", href: "#how-it-works" },
+  { label: "How It Works", icon: Laptop, page: "how-it-works", href: "#how-it-works" },
   { label: "Profile", icon: UserCircle, page: "profile", href: "#profile" }
 ];
 
@@ -970,22 +971,21 @@ function Header({ user, uploadState, setUploadState }) {
           <a className="how-link-button" href="#how-it-works">
             <span>How It Works</span>
           </a>
-          <LoadingButton
+          <button
             className="upload-button"
-            isLoading={uploadState.status === "loading"}
-            loadingLabel="Uploading"
             onClick={() => fileInputRef.current?.click()}
+            disabled={uploadState.status === "loading"}
             type="button"
           >
-            <Upload size={18} />
+            {uploadState.status === "loading" ? <LoadingSpinner size="sm" /> : <Upload size={18} />}
             <span>Upload</span>
-          </LoadingButton>
+          </button>
         </div>
       </header>
       {uploadState.status === "loading" && (
         <LoadingBanner
           title="Uploading PDF"
-          detail="Saving your document to the library."
+          detail="Analyzing content..."
         />
       )}
       {uploadState.status !== "idle" && uploadState.status !== "loading" && (
@@ -1056,7 +1056,7 @@ function HowItWorksPage() {
   return (
     <div className="how-page">
       <header className="how-header">
-        <h1>How It Works ✨</h1>
+        <h1>How It Works</h1>
         <p>Your AI-powered study workflow, step by step.</p>
       </header>
 
@@ -1322,6 +1322,7 @@ function ProfileActionModal({ action, user, onClose, onUpdated }) {
 
 function LibraryPage() {
   const [folders, setFolders] = useState([]);
+  const [reviewFolderCards, setReviewFolderCards] = useState([]);
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [folderDocuments, setFolderDocuments] = useState([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
@@ -1332,6 +1333,9 @@ function LibraryPage() {
   const [uploadState, setUploadState] = useState("idle");
   const [aiAction, setAiAction] = useState("idle");
   const [activePdf, setActivePdf] = useState(null);
+  const [folderModal, setFolderModal] = useState(null);
+  const [folderModalStatus, setFolderModalStatus] = useState("idle");
+  const [folderModalError, setFolderModalError] = useState("");
   const fileInputRef = useRef(null);
   useAutoDismissMessage(message, setMessage);
 
@@ -1342,7 +1346,10 @@ function LibraryPage() {
   async function loadFolders() {
     try {
       setStatus("loading");
-      const response = await fetch("/api/folders");
+      const [response, reviewCards] = await Promise.all([
+        fetch("/api/folders"),
+        loadReviewFolderCards()
+      ]);
       const data = await response.json();
 
       if (!response.ok) {
@@ -1350,6 +1357,7 @@ function LibraryPage() {
       }
 
       setFolders(data.folders || []);
+      setReviewFolderCards(reviewCards);
       setStatus("success");
     } catch (requestError) {
       setMessage({ type: "error", text: requestError.message || "Unable to load folders." });
@@ -1379,59 +1387,67 @@ function LibraryPage() {
     }
   }
 
-  async function createFolder() {
-    const name = window.prompt("Folder name");
-
-    if (!name?.trim()) {
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() })
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Unable to create folder.");
-      }
-
-      setMessage({ type: "success", text: "Folder created." });
-      await loadFolders();
-    } catch (requestError) {
-      setMessage({ type: "error", text: requestError.message || "Unable to create folder." });
-    }
+  function createFolder() {
+    setFolderModal({ mode: "create", folder: null });
+    setFolderModalError("");
   }
 
-  async function renameFolder(folder) {
-    const name = window.prompt("Rename folder", folder.name);
+  function renameFolder(folder) {
+    setFolderModal({ mode: "rename", folder });
+    setFolderModalError("");
+  }
 
-    if (!name?.trim() || name.trim() === folder.name) {
+  function closeFolderModal() {
+    if (folderModalStatus === "loading") {
+      return;
+    }
+
+    setFolderModal(null);
+    setFolderModalError("");
+  }
+
+  async function submitFolderModal(name) {
+    const cleanName = name.trim();
+
+    if (!cleanName) {
+      setFolderModalError("Enter a folder name.");
+      return;
+    }
+
+    if (folderModal?.mode === "rename" && cleanName === folderModal.folder?.name) {
+      closeFolderModal();
       return;
     }
 
     try {
-      const response = await fetch(`/api/folders/${folder.id}`, {
-        method: "PUT",
+      setFolderModalStatus("loading");
+      setFolderModalError("");
+
+      const isRename = folderModal?.mode === "rename";
+      const endpoint = isRename ? `/api/folders/${folderModal.folder.id}` : "/api/folders";
+      const response = await fetch(endpoint, {
+        method: isRename ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() })
+        body: JSON.stringify({ name: cleanName })
       });
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Unable to rename folder.");
+        throw new Error(data.message || `Unable to ${isRename ? "rename" : "create"} folder.`);
       }
 
-      setMessage({ type: "success", text: "Folder renamed." });
+      setMessage({ type: "success", text: isRename ? "Folder renamed." : "Folder created." });
       await loadFolders();
 
-      if (selectedFolder?.id === folder.id) {
+      if (isRename && selectedFolder?.id === folderModal.folder.id) {
         await openFolder(data.folder);
       }
+
+      setFolderModal(null);
     } catch (requestError) {
-      setMessage({ type: "error", text: requestError.message || "Unable to rename folder." });
+      setFolderModalError(requestError.message || "Unable to save folder.");
+    } finally {
+      setFolderModalStatus("idle");
     }
   }
 
@@ -1696,16 +1712,15 @@ function LibraryPage() {
             multiple
             onChange={handlePdfUpload}
           />
-          <LoadingButton
+          <button
             className="upload-button"
-            isLoading={uploadState === "loading"}
-            loadingLabel="Uploading"
             onClick={() => fileInputRef.current?.click()}
+            disabled={uploadState === "loading"}
             type="button"
           >
-            <Upload size={18} />
+            {uploadState === "loading" ? <LoadingSpinner size="sm" /> : <Upload size={18} />}
             <span>Upload PDFs</span>
-          </LoadingButton>
+          </button>
           <button className="library-secondary-action" type="button" onClick={createFolder}>
             <Plus size={18} />
             <span>New Folder</span>
@@ -1726,7 +1741,7 @@ function LibraryPage() {
           }
           detail={
             message.text.toLowerCase().includes("upload")
-              ? "Saving your document to the library."
+              ? "Analyzing content..."
               : message.text.toLowerCase().includes("quiz")
                 ? "Creating questions from your study material."
                 : message.text.toLowerCase().includes("flashcard")
@@ -1763,6 +1778,7 @@ function LibraryPage() {
           onSetMoveTarget={setMoveTargetId}
           onUploadFiles={uploadFiles}
           onViewPdf={setActivePdf}
+          reviewFolderCards={reviewFolderCards}
           selectedDocumentIds={selectedDocumentIds}
           status={detailStatus}
           aiAction={aiAction}
@@ -1774,6 +1790,7 @@ function LibraryPage() {
           onDelete={deleteFolder}
           onOpen={openFolder}
           onRename={renameFolder}
+          reviewFolderCards={reviewFolderCards}
           status={status}
         />
       )}
@@ -1783,11 +1800,153 @@ function LibraryPage() {
           onClose={() => setActivePdf(null)}
         />
       )}
+      {folderModal && (
+        <FolderNameModal
+          error={folderModalError}
+          initialName={folderModal.folder?.name || ""}
+          mode={folderModal.mode}
+          onClose={closeFolderModal}
+          onSubmit={submitFolderModal}
+          status={folderModalStatus}
+        />
+      )}
     </div>
   );
 }
 
-function FolderGrid({ folders, onDelete, onOpen, onRename, status }) {
+function FolderNameModal({ error, initialName = "", mode, onClose, onSubmit, status }) {
+  const [name, setName] = useState(initialName);
+  const inputRef = useRef(null);
+  const isRename = mode === "rename";
+  const isLoading = status === "loading";
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 80);
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    onSubmit(name);
+  }
+
+  return (
+    <div className="folder-modal-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) {
+        onClose();
+      }
+    }}>
+      <form className="folder-name-modal" role="dialog" aria-modal="true" aria-labelledby="folder-modal-title" onSubmit={handleSubmit}>
+        <button className="folder-modal-close" type="button" aria-label="Close folder modal" onClick={onClose} disabled={isLoading}>
+          <X size={18} />
+        </button>
+        <div className="folder-modal-copy">
+          <h2 id="folder-modal-title">{isRename ? "Rename Folder" : "Create New Folder"}</h2>
+          <p>{isRename ? "Update the folder name." : "Organize your study materials into a subject folder."}</p>
+        </div>
+        <label className="folder-modal-field">
+          <span>Folder name</span>
+          <input
+            ref={inputRef}
+            type="text"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Enter folder name"
+            disabled={isLoading}
+          />
+        </label>
+        {error && <p className="folder-modal-error">{error}</p>}
+        <div className="folder-modal-actions">
+          <button className="folder-modal-secondary" type="button" onClick={onClose} disabled={isLoading}>Cancel</button>
+          <LoadingButton
+            className="folder-modal-primary"
+            isLoading={isLoading}
+            loadingLabel={isRename ? "Renaming" : "Creating"}
+            type="submit"
+          >
+            {isRename ? "Rename Folder" : "Create Folder"}
+          </LoadingButton>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+async function loadReviewFolderCards() {
+  const [summaryResponse, questionResponse] = await Promise.all([
+    fetch("/api/review/summaries"),
+    fetch("/api/review/questions")
+  ]);
+  const [summaryData, questionData] = await Promise.all([
+    summaryResponse.json(),
+    questionResponse.json()
+  ]);
+
+  if (!summaryResponse.ok) {
+    throw new Error(summaryData.message || "Unable to load saved summaries.");
+  }
+
+  if (!questionResponse.ok) {
+    throw new Error(questionData.message || "Unable to load marked questions.");
+  }
+
+  return buildReviewFolderCards(summaryData.folders || [], questionData.folders || []);
+}
+
+function getFolderReviewInfo(reviewFolderCards, folder) {
+  return reviewFolderCards.find((item) => item.folderId === folder.id) || {
+    folderId: folder.id,
+    folderName: folder.name,
+    savedSummaryCount: 0,
+    markedQuestionCount: 0
+  };
+}
+
+function ReviewContentLink({ folder, reviewInfo, className = "" }) {
+  const reviewCount = (reviewInfo?.savedSummaryCount || 0) + (reviewInfo?.markedQuestionCount || 0);
+  const isDisabled = reviewCount === 0;
+  const reviewHref = `#review?folderId=${encodeURIComponent(folder.id)}&folderName=${encodeURIComponent(folder.name)}`;
+  const label = reviewCount > 0 ? `Review Content (${reviewCount})` : "Review Content";
+  const tooltip = "No saved content";
+  const classes = ["folder-review-link", className, isDisabled ? "disabled" : ""].filter(Boolean).join(" ");
+
+  if (isDisabled) {
+    return (
+      <a
+        aria-disabled="true"
+        className={classes}
+        data-tooltip={tooltip}
+        onClick={(event) => event.preventDefault()}
+        role="link"
+        tabIndex={0}
+      >
+        <Bookmark size={16} />
+        <span>{label}</span>
+      </a>
+    );
+  }
+
+  return (
+    <a className={classes} href={reviewHref}>
+      <Bookmark size={16} />
+      <span>{label}</span>
+    </a>
+  );
+}
+
+function FolderGrid({ folders, onDelete, onOpen, onRename, reviewFolderCards, status }) {
   if (status === "loading") {
     return (
       <>
@@ -1876,6 +2035,7 @@ function FolderDetailView({
   onSetMoveTarget,
   onUploadFiles,
   onViewPdf,
+  reviewFolderCards,
   selectedDocumentIds,
   status,
   uploadState
@@ -1888,6 +2048,7 @@ function FolderDetailView({
   const allSelected = selectableDocuments.length > 0
     && selectableDocuments.every((id) => selectedDocumentIds.includes(id));
   const destinationFolders = folders.filter((item) => item.id !== folder.id);
+  const reviewInfo = getFolderReviewInfo(reviewFolderCards, folder);
 
   function toggleDocument(id) {
     onSelectDocuments(
@@ -1990,6 +2151,7 @@ function FolderDetailView({
           <p>{folder.documentCount} {folder.documentCount === 1 ? "PDF" : "PDFs"}</p>
         </div>
         <div className="folder-detail-actions">
+          <ReviewContentLink folder={folder} reviewInfo={reviewInfo} />
           <button type="button" onClick={() => onRename(folder)}>
             <Pencil size={16} />
             <span>Rename</span>
@@ -2010,15 +2172,14 @@ function FolderDetailView({
           <strong>Upload PDFs into {folder.name}</strong>
           <span>Drag and drop PDFs here, or use the Upload PDFs button above.</span>
         </div>
-        <LoadingButton
-          isLoading={uploadState === "loading"}
-          loadingLabel="Uploading"
+        <button
+          disabled={uploadState === "loading"}
           onClick={() => document.querySelector(".library-actions .file-input")?.click()}
           type="button"
         >
           <Upload size={17} />
           <span>Upload PDF</span>
-        </LoadingButton>
+        </button>
       </div>
 
       {status === "loading" ? (
@@ -2215,12 +2376,15 @@ function FolderDetailView({
 }
 
 function ReviewPage() {
+  const requestedReviewTab = getHashParams().get("tab") === "questions" ? "questions" : "summaries";
+  const requestedFolderId = getHashParams().get("folderId") || "";
+  const requestedFolderName = getHashParams().get("folderName") || "";
   const [summaryGroups, setSummaryGroups] = useState([]);
   const [questionGroups, setQuestionGroups] = useState([]);
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState({ type: "idle", text: "" });
   const [selectedFolder, setSelectedFolder] = useState(null);
-  const [activeTab, setActiveTab] = useState("summaries");
+  const [activeTab, setActiveTab] = useState(requestedReviewTab);
   useAutoDismissMessage(message, setMessage);
 
   useEffect(() => {
@@ -2280,7 +2444,30 @@ function ReviewPage() {
     }
   }
 
-  const folderCards = buildReviewFolderCards(summaryGroups, questionGroups);
+  const folderCards = useMemo(
+    () => buildReviewFolderCards(summaryGroups, questionGroups),
+    [summaryGroups, questionGroups]
+  );
+
+  useEffect(() => {
+    if (status !== "success" || !requestedFolderId) {
+      return;
+    }
+
+    const matchingFolder = folderCards.find((folder) => folder.folderId === requestedFolderId) || {
+      key: requestedFolderId,
+      folderId: requestedFolderId,
+      folderName: requestedFolderName || "Selected Folder",
+      savedSummaryCount: 0,
+      markedQuestionCount: 0
+    };
+
+    if (matchingFolder && selectedFolder?.key !== matchingFolder.key) {
+      setSelectedFolder(matchingFolder);
+      setActiveTab(requestedReviewTab);
+    }
+  }, [folderCards, requestedFolderId, requestedFolderName, requestedReviewTab, selectedFolder?.key, status]);
+
   const currentFolder = selectedFolder
     ? folderCards.find((folder) => folder.key === selectedFolder.key) || selectedFolder
     : null;
@@ -2303,6 +2490,7 @@ function ReviewPage() {
               className="review-back-button"
               type="button"
               onClick={() => {
+                window.location.hash = "#review";
                 setSelectedFolder(null);
                 setActiveTab("summaries");
               }}
@@ -2341,7 +2529,7 @@ function ReviewPage() {
                 type="button"
                 onClick={() => {
                   setSelectedFolder(folder);
-                  setActiveTab("summaries");
+                  setActiveTab(requestedReviewTab);
                 }}
               >
                 <div className="review-folder-icon">
@@ -2435,7 +2623,7 @@ function ReviewPage() {
             ) : (
               <EmptyPanel
                 title="No marked questions in this folder."
-                text="Mark questions from this subject's quizzes to review them later."
+                text="No marked questions available in this folder."
               />
             )
           )}
@@ -2687,8 +2875,10 @@ function SummaryPage() {
   });
   const [pdfExportState, setPdfExportState] = useState({
     status: "idle",
-    message: ""
+    message: "",
+    pdfType: ""
   });
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
   const [deleteState, setDeleteState] = useState({
     status: "idle",
     message: ""
@@ -2705,6 +2895,7 @@ function SummaryPage() {
   const [chatError, setChatError] = useState("");
   const [isChatExpanded, setIsChatExpanded] = useState(false);
   const chatRef = useRef(null);
+  const pdfMenuRef = useRef(null);
   const chatScrollPositions = useRef({ compact: 0, expanded: 0 });
   useAutoDismissStatus(quizGeneration, setQuizGeneration);
   useAutoDismissStatus(flashcardGeneration, setFlashcardGeneration);
@@ -2727,13 +2918,14 @@ function SummaryPage() {
         const response = await fetch(`/api/summaries?${params.toString()}`, {
           signal: controller.signal
         });
+        const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          throw new Error(`Summary request failed with ${response.status}`);
+          throw new Error(data.message || `Summary request failed with ${response.status}`);
         }
 
-        const data = await response.json();
         setSummaryData(data);
+        setError("");
         setStatus("success");
       } catch (requestError) {
         if (requestError.name === "AbortError") {
@@ -2756,6 +2948,20 @@ function SummaryPage() {
     setChatStatus("idle");
     setChatError("");
   }, [documentId]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (pdfMenuRef.current && !pdfMenuRef.current.contains(event.target)) {
+        setPdfMenuOpen(false);
+      }
+    }
+
+    window.document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      window.document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     if (!summaryData?.document?.id || !summaryData?.summary) {
@@ -2898,8 +3104,9 @@ function SummaryPage() {
     }
   }
 
-  function handleDownloadPdf() {
+  async function handleDownloadPdf(pdfType) {
     try {
+      const selectedPdfType = pdfType === "quick" ? "quick" : "detailed";
       const currentSummaryText = summaryData?.summary?.content?.[length]
         || summaryData?.summary?.displayedContent
         || "";
@@ -2910,24 +3117,49 @@ function SummaryPage() {
 
       setPdfExportState({
         status: "loading",
-        message: "Preparing PDF..."
+        message: selectedPdfType === "quick" ? "Preparing Quick Revision PDF..." : "Preparing Detailed Notes PDF...",
+        pdfType: selectedPdfType
       });
+      setPdfMenuOpen(true);
+
+      const response = await fetch("/api/summaries/pdf-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: document?.id,
+          length,
+          pdfType: selectedPdfType,
+          summaryText: currentSummaryText,
+          questions: selectedPdfType === "detailed" ? questions.map((item) => item.question || item) : []
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to generate PDF notes.");
+      }
 
       exportSummaryPdf({
         document,
         summary,
         length,
-        summaryText: currentSummaryText,
-        questions
+        summaryText: data.notes,
+        pdfSections: data.sections,
+        questions: data.importantQuestions?.length ? data.importantQuestions : questions,
+        pdfType: selectedPdfType,
+        generatedAt: data.meta?.generatedAt
       });
       setPdfExportState({
         status: "success",
-        message: "PDF downloaded."
+        message: selectedPdfType === "quick" ? "Quick Revision PDF downloaded." : "Detailed Notes PDF downloaded.",
+        pdfType: selectedPdfType
       });
+      setPdfMenuOpen(false);
     } catch (pdfError) {
       setPdfExportState({
         status: "error",
-        message: pdfError.message || "Unable to download summary PDF."
+        message: pdfError.message || "Unable to download summary PDF.",
+        pdfType: pdfType === "quick" ? "quick" : "detailed"
       });
     }
   }
@@ -3138,46 +3370,86 @@ function SummaryPage() {
         </div>
 
         <div className="summary-header-actions">
-          <LoadingButton
-            className="summary-primary-action"
-            isLoading={isRegenerating}
-            loadingLabel="Generating"
-            onClick={handleGenerate}
-            type="button"
-          >
-            <RefreshCw size={17} />
-            <span>Regenerate Summary</span>
-          </LoadingButton>
-          <LoadingButton
-            className="summary-primary-action secondary"
-            isLoading={saveSummaryState.status === "loading"}
-            loadingLabel={savedSummary ? "Removing" : "Saving"}
-            onClick={handleSaveSummaryForReview}
-            disabled={!summary || saveSummaryState.status === "loading"}
-            type="button"
-          >
-            <Bookmark size={19} />
-            <span>{savedSummary ? "Saved" : "Save for Revision"}</span>
-          </LoadingButton>
-          <button
-            className="summary-icon-button"
-            type="button"
-            aria-label="Download summary PDF"
-            onClick={handleDownloadPdf}
-            disabled={pdfExportState.status === "loading" || !summary}
-            title="Download PDF"
-          >
-            {pdfExportState.status === "loading" ? <LoadingSpinner size="sm" /> : <Download size={19} />}
-          </button>
-          <button
-            className="summary-primary-action danger"
-            type="button"
-            onClick={() => setDeleteConfirmOpen(true)}
-            disabled={!summary || deleteState.status === "loading"}
-          >
-            <Trash2 size={17} />
-            <span>Delete Summary</span>
-          </button>
+          <div className="summary-header-action-row">
+            <LoadingButton
+              className="summary-primary-action"
+              isLoading={isRegenerating}
+              loadingLabel="Generating"
+              onClick={handleGenerate}
+              type="button"
+            >
+              <RefreshCw size={17} />
+              <span>Regenerate Summary</span>
+            </LoadingButton>
+            <button
+              className="summary-primary-action danger"
+              type="button"
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={!summary || deleteState.status === "loading"}
+            >
+              <Trash2 size={17} />
+              <span>Delete Summary</span>
+            </button>
+          </div>
+          <div className="summary-header-action-row">
+            <LoadingButton
+              className="summary-primary-action secondary"
+              isLoading={saveSummaryState.status === "loading"}
+              loadingLabel={savedSummary ? "Removing" : "Saving"}
+              onClick={handleSaveSummaryForReview}
+              disabled={!summary || saveSummaryState.status === "loading"}
+              type="button"
+            >
+              <Bookmark size={19} />
+              <span>{savedSummary ? "Saved" : "Save for Revision"}</span>
+            </LoadingButton>
+            <div className="summary-pdf-menu" ref={pdfMenuRef}>
+              <button
+                className="summary-primary-action secondary summary-pdf-trigger"
+                type="button"
+                aria-expanded={pdfMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setPdfMenuOpen((open) => !open)}
+                disabled={!summary}
+              >
+                <Download size={17} />
+                <span>Download PDF</span>
+                <ChevronDown size={16} />
+              </button>
+              {pdfMenuOpen && (
+                <div className="summary-pdf-popover" role="menu" aria-label="Choose PDF type">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleDownloadPdf("quick")}
+                    disabled={pdfExportState.status === "loading"}
+                  >
+                    <span className="summary-pdf-option-icon">
+                      {pdfExportState.status === "loading" && pdfExportState.pdfType === "quick" ? <LoadingSpinner size="sm" /> : <Zap size={18} />}
+                    </span>
+                    <span>
+                      <strong>Quick PDF</strong>
+                      <small>Short revision notes</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleDownloadPdf("detailed")}
+                    disabled={pdfExportState.status === "loading"}
+                  >
+                    <span className="summary-pdf-option-icon">
+                      {pdfExportState.status === "loading" && pdfExportState.pdfType === "detailed" ? <LoadingSpinner size="sm" /> : <FileText size={18} />}
+                    </span>
+                    <span>
+                      <strong>Detailed PDF</strong>
+                      <small>Full study notes</small>
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </header>
 
@@ -3256,7 +3528,7 @@ function SummaryPage() {
         </div>
 
         {summary ? (
-          <div className={`summary-scroll-panel ${length === "detailed" ? "collapsed" : ""}`}>
+          <div className="summary-scroll-panel collapsed">
             <SummarySections text={summary.content?.[length] || summary.displayedContent} length={length} />
           </div>
         ) : (
@@ -3320,7 +3592,7 @@ function SummaryPage() {
             {questions.slice(0, 5).map((item, index) => (
               <button className="question-row" type="button" onClick={() => handleQuestionToChat(item.question)} key={item.id}>
                 <span className="question-number">{index + 1}</span>
-                <strong>{item.question}</strong>
+                <strong>{cleanDisplaySentence(item.question)}</strong>
                 <Send size={17} />
               </button>
             ))}
@@ -3335,15 +3607,6 @@ function SummaryPage() {
       </section>
 
       <section className="summary-actions-grid">
-        <a className="summary-action-card" href={summaryData.links?.quiz || "#quizzes"} onClick={handleGenerateQuiz}>
-          <div className="action-icon blue">
-            <Brain size={24} />
-          </div>
-          <div>
-            <h3>{quizGeneration.status === "loading" ? "Generating Quiz" : "Generate Quiz"}</h3>
-            <p>{quizGeneration.status === "idle" ? "Create MCQs from this content to test your understanding." : quizGeneration.message}</p>
-          </div>
-        </a>
         <a className="summary-action-card" href={summaryData.links?.flashcards || "#flashcards"} onClick={handleGenerateFlashcards}>
           <div className="action-icon gold">
             <Layers size={24} />
@@ -3351,6 +3614,15 @@ function SummaryPage() {
           <div>
             <h3>{flashcardGeneration.status === "loading" ? "Generating Flashcards" : "Generate Flashcards"}</h3>
             <p>{flashcardGeneration.status === "idle" ? "Create flashcards for quick revision of important concepts." : flashcardGeneration.message}</p>
+          </div>
+        </a>
+        <a className="summary-action-card" href={summaryData.links?.quiz || "#quizzes"} onClick={handleGenerateQuiz}>
+          <div className="action-icon blue">
+            <Brain size={24} />
+          </div>
+          <div>
+            <h3>{quizGeneration.status === "loading" ? "Generating Quiz" : "Generate Quiz"}</h3>
+            <p>{quizGeneration.status === "idle" ? "Create MCQs from this content to test your understanding." : quizGeneration.message}</p>
           </div>
         </a>
       </section>
@@ -3383,12 +3655,12 @@ function SummaryPage() {
 }
 
 function SummarySections({ text, length }) {
-  const sections = splitSummaryIntoSections(text, length);
+  const sections = buildSummaryDisplaySections(text, length);
 
   return (
-    <div className="summary-sections">
-      {sections.map((section) => (
-        <article className="summary-section-block" key={section.title}>
+    <div className={`summary-sections summary-sections-${length}`}>
+      {sections.map((section, index) => (
+        <article className="summary-section-block" key={`${section.title}-${index}`}>
           <h3>{section.title}</h3>
           <p>{section.text}</p>
         </article>
@@ -3961,7 +4233,7 @@ function QuizPage() {
             className="summary-primary-action secondary"
             type="button"
             onClick={() => setRetakeConfirmOpen(true)}
-            disabled={!quiz}
+            disabled={!quiz || isGenerating}
           >
             <RefreshCw size={17} />
             <span>Retake Quiz</span>
@@ -4015,14 +4287,12 @@ function QuizPage() {
         </div>
       )}
 
-      {status === "success" && !quiz && (
+      {status === "success" && !quiz && !isGenerating && (
         <section className="quiz-empty-card">
           <Brain size={34} />
           <strong>No quiz generated yet.</strong>
           <p>Generate an AI quiz from the latest uploaded document or open a document from Summary first.</p>
           <LoadingButton
-            isLoading={isGenerating}
-            loadingLabel="Generating quiz"
             onClick={handleGenerateQuiz}
             type="button"
           >
@@ -4163,6 +4433,12 @@ function QuizResultsPage() {
   const [insightStatus, setInsightStatus] = useState("idle");
   const result = quizId ? readQuizResult(quizId) : null;
   const displayedInsight = insightStatus === "fallback" ? QUIZ_INSIGHT_FALLBACK : insight;
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+  }, [quizId]);
 
   useEffect(() => {
     setInsight(result?.aiInsightGenerated ? result.aiInsight || "" : "");
@@ -4394,9 +4670,8 @@ function QuizResultsPage() {
       <section className="quiz-recommended-actions">
         <h2>Recommended Action</h2>
         <div>
-          <a className="summary-primary-action secondary" href={`#quizzes?documentId=${result.documentId || ""}&review=1`}>Review Incorrect Questions</a>
+          <a className="summary-primary-action secondary" href="#review?tab=questions">Go to Marked Review Center</a>
           <a className="summary-primary-action" href={`#summary?documentId=${result.documentId || ""}`}>Open AI Tutor</a>
-          <button className="summary-primary-action secondary" type="button" onClick={() => setRetakeConfirmOpen(true)}>Retake Quiz</button>
         </div>
       </section>
 
@@ -4707,14 +4982,12 @@ function FlashcardsPage() {
         </div>
       )}
 
-      {status === "success" && !deck && (
+      {status === "success" && !deck && !isGenerating && (
         <section className="flashcards-empty-card">
           <BookOpen size={36} />
           <strong>No flashcards generated yet.</strong>
           <p>Generate AI flashcards from your latest uploaded document or open a document from Summary first.</p>
           <LoadingButton
-            isLoading={isGenerating}
-            loadingLabel="Generating flashcards"
             onClick={handleGenerateFlashcards}
             type="button"
           >
@@ -5977,13 +6250,14 @@ function capitalize(value) {
 }
 
 function splitSummaryIntoSections(text, length) {
-  const structuredSections = parseTopicSections(text);
+  const cleanText = stripMarkdownArtifacts(text);
+  const structuredSections = parseTopicSections(cleanText);
 
   if (structuredSections.length) {
     return structuredSections;
   }
 
-  const sentences = String(text || "")
+  const sentences = cleanText
     .replace(/\s+/g, " ")
     .split(/(?<=[.!?])\s+/)
     .map(cleanDisplaySentence)
@@ -6007,16 +6281,15 @@ function splitSummaryIntoSections(text, length) {
     groups.push(current);
   }
 
-  return (groups.length ? groups : [text]).map((group, index) => ({
+  return (groups.length ? groups : [cleanText]).map((group, index) => ({
     title: buildTopicTitle(group, index),
     text: group
   }));
 }
 
 function parseTopicSections(text) {
-  const normalized = String(text || "")
+  const normalized = stripMarkdownArtifacts(text)
     .replace(/\r\n/g, "\n")
-    .replace(/\s*#{2,3}\s+/g, "\n")
     .replace(/\n{2,}/g, "\n")
     .trim();
 
@@ -6035,7 +6308,7 @@ function parseTopicSections(text) {
 }
 
 function cleanDisplaySentence(sentence) {
-  return sentence
+  return stripMarkdownArtifacts(sentence)
     .replace(/[•●○▪▫]/g, "")
     .replace(/^\s*[-–—:;,.]+/, "")
     .replace(/^\s*\d+[\).:-]\s*/, "")
@@ -6052,8 +6325,7 @@ function buildTopicTitle(text, index) {
 }
 
 function cleanTopicTitle(title, index = 0, sectionText = "") {
-  const cleaned = String(title || "")
-    .replace(/^#+\s*/, "")
+  const cleaned = stripMarkdownArtifacts(title)
     .replace(/^\s*[-–—:;,.]+/, "")
     .replace(/^\s*\d+[\).:-]\s*/, "")
     .replace(/\s+/g, " ")
@@ -6068,6 +6340,227 @@ function cleanTopicTitle(title, index = 0, sectionText = "") {
   }
 
   return toTitleCase(cleaned.split(/\s+/).slice(0, 8).join(" "));
+}
+
+function buildSummaryDisplaySections(text, length) {
+  const sections = splitSummaryIntoSections(text, length);
+
+  if (length === "detailed") {
+    return ensureOverviewFirst(sections);
+  }
+
+  const compactSections = sections
+    .map((section) => ({
+      ...section,
+      text: normalizeCompactSummaryParagraph(section.text)
+    }))
+    .filter((section) => section.text);
+
+  const minimumCount = length === "short" ? 3 : 5;
+  const maximumCount = length === "short" ? 5 : 7;
+  const targetCount = length === "short" ? 3 : 6;
+
+  if (compactSections.length >= minimumCount) {
+    return ensureOverviewFirst(compactSections, maximumCount);
+  }
+
+  return ensureOverviewFirst(
+    expandCompactSummarySections(compactSections, targetCount),
+    maximumCount
+  );
+}
+
+function ensureOverviewFirst(sections, maximumCount) {
+  if (!sections.length) {
+    return sections;
+  }
+
+  const firstSection = sections[0];
+  const hasRealOverview = /^(overview\b.*|introduction\b.*)$/i.test(firstSection.title);
+  const normalizedSections = hasRealOverview
+    ? [{ ...firstSection, title: "Overview" }, ...sections.slice(1)]
+    : [
+        {
+          title: "Overview",
+          text: buildDocumentOverview(sections)
+        },
+        ...sections
+      ];
+
+  return maximumCount
+    ? normalizedSections.slice(0, maximumCount)
+    : normalizedSections;
+}
+
+function buildDocumentOverview(sections) {
+  const sentences = sections.flatMap((section, sectionIndex) => (
+    splitCompactSummarySentences(section.text).map((sentence, sentenceIndex) => ({
+      sentence,
+      order: sectionIndex * 10 + sentenceIndex,
+      score: scoreOverviewSentence(sentence, sectionIndex)
+    }))
+  ));
+  const selected = [...sentences]
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .slice(0, 2)
+    .sort((a, b) => a.order - b.order)
+    .map(({ sentence }) => sentence);
+
+  return selected.join(" ") || sections[0]?.text || "";
+}
+
+function scoreOverviewSentence(sentence, sectionIndex) {
+  const text = String(sentence || "");
+  let score = sectionIndex === 0 ? 1 : 0;
+
+  if (/\b(DBMS|database management system|cloud computing|operating system|computer network|software engineering|data structure|machine learning|artificial intelligence|cybersecurity|web development)\b/i.test(text)) {
+    score += 6;
+  }
+
+  if (/\b(is|are|refers to|means|is defined as|provides|enables|helps)\b/i.test(text)) {
+    score += 3;
+  }
+
+  if (/\b(purpose|used to|manages?|organizes?|covers?|focuses on|allows?)\b/i.test(text)) {
+    score += 2;
+  }
+
+  return score;
+}
+
+function normalizeCompactSummaryParagraph(text) {
+  const parts = stripMarkdownArtifacts(text)
+    .split(/\n+|;+/)
+    .map(cleanDisplaySentence)
+    .filter(Boolean);
+
+  if (parts.length <= 1) {
+    return parts[0] || "";
+  }
+
+  return parts
+    .map((part) => /[.!?]$/.test(part) ? part : `${part}.`)
+    .join(" ");
+}
+
+function expandCompactSummarySections(sections, targetCount) {
+  const sentences = sections
+    .flatMap((section) => splitCompactSummarySentences(section.text))
+    .filter(Boolean);
+
+  if (sentences.length < 2) {
+    return sections;
+  }
+
+  const groupCount = Math.min(targetCount, sentences.length);
+  const groups = Array.from({ length: groupCount }, () => []);
+
+  sentences.forEach((sentence, index) => {
+    const groupIndex = Math.min(
+      Math.floor(index * groupCount / sentences.length),
+      groupCount - 1
+    );
+    groups[groupIndex].push(sentence);
+  });
+
+  const usedTitles = new Set();
+
+  return groups
+    .map((group, index) => {
+      const text = group.join(" ");
+      const preferredTitle = index === 0 ? sections[0]?.title : buildTopicTitle(text, index);
+      const title = makeUniqueSummaryTitle(preferredTitle, usedTitles, index);
+      usedTitles.add(title.toLowerCase());
+      return { title, text };
+    })
+    .filter((section) => section.text);
+}
+
+function splitCompactSummarySentences(text) {
+  return stripMarkdownArtifacts(text)
+    .split(/\n+|;+\s*|(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .map(cleanDisplaySentence)
+    .filter(Boolean);
+}
+
+function makeUniqueSummaryTitle(title, usedTitles, index) {
+  const cleaned = cleanTopicTitle(title, index);
+
+  if (!usedTitles.has(cleaned.toLowerCase())) {
+    return cleaned;
+  }
+
+  const fallbacks = [
+    "Introduction and Core Concepts",
+    "Key Principles",
+    "Main Components",
+    "Important Processes",
+    "Applications and Examples",
+    "Essential Takeaways"
+  ];
+
+  return fallbacks.find((fallback) => !usedTitles.has(fallback.toLowerCase()))
+    || `Key Concept ${index + 1}`;
+}
+
+function splitSummaryPoints(text) {
+  const cleaned = stripMarkdownArtifacts(text);
+  const points = cleaned
+    .split(/\n+|[;•]+|(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .map(cleanDisplaySentence)
+    .filter(Boolean);
+
+  return [...new Set(points)];
+}
+
+function stripMarkdownArtifacts(text) {
+  return normalizeTechnicalCapitalization(String(text || "")
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```[a-z]*|```/gi, ""))
+    .replace(/!\[([^\]]*)]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)]\(([^)]+)\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/~~(.*?)~~/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/_(.*?)_/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*>+\s*/gm, "")
+    .replace(/[*#`]/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/:\./g, ".")
+    .replace(/\.{2,}/g, ".")
+    .trim());
+}
+
+function normalizeTechnicalCapitalization(value) {
+  const terms = [
+    ["dbms", "DBMS"],
+    ["sql", "SQL"],
+    ["acid", "ACID"],
+    ["ddl", "DDL"],
+    ["dml", "DML"],
+    ["dcl", "DCL"],
+    ["tcl", "TCL"],
+    ["er", "ER"],
+    ["api", "API"],
+    ["ci/cd", "CI/CD"],
+    ["devops", "DevOps"],
+    ["iaas", "IaaS"],
+    ["paas", "PaaS"],
+    ["saas", "SaaS"],
+    ["aws", "AWS"],
+    ["ec2", "EC2"],
+    ["s3", "S3"],
+    ["iam", "IAM"],
+    ["cdn", "CDN"],
+    ["vpc", "VPC"]
+  ];
+
+  return terms.reduce((text, [term, replacement]) => (
+    text.replace(new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), replacement)
+  ), String(value || ""));
 }
 
 function findBestTopicPhrase(text) {
@@ -6160,6 +6653,19 @@ function isBadSummaryHeading(title) {
   }
 
   const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+
+  if (wordCount > 8 || /[.!?]/.test(normalized)) {
+    return true;
+  }
+
+  if (/^(both|adjusts?|cloud providers?|gmail|docker)\b/i.test(normalized)) {
+    return true;
+  }
+
+  if (/\b(based|offer|instances?|providers?|salesforce|kubernetes)\s*$/i.test(normalized)) {
+    return true;
+  }
+
   return wordCount === 1 && !isTechnicalPhrase(normalized);
 }
 
@@ -6194,14 +6700,26 @@ function toTitleCase(value) {
     .join(" ");
 }
 
-function exportSummaryPdf({ document: documentData, summary, length, summaryText, questions }) {
+function exportSummaryPdf({
+  document: documentData,
+  summary,
+  length,
+  summaryText,
+  pdfSections,
+  questions,
+  pdfType = "detailed",
+  generatedAt
+}) {
   const pdf = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 54;
+  const margin = pdfType === "quick" ? 46 : 54;
   const contentWidth = pageWidth - margin * 2;
   const title = documentData?.title || "Study Summary";
-  const generatedDate = summary?.updatedAt || summary?.generatedAt || new Date().toISOString();
+  const generatedDate = generatedAt || summary?.updatedAt || summary?.generatedAt || new Date().toISOString();
+  const pdfTypeLabel = pdfType === "quick" ? "Quick Revision PDF" : "Detailed Notes PDF";
+  const sections = normalizePdfSections(pdfSections, summaryText, length)
+    .filter((section) => pdfType !== "quick" || !/important questions?|q\s*&\s*a/i.test(section.title));
   let cursorY = margin;
 
   function addFooter() {
@@ -6264,6 +6782,103 @@ function exportSummaryPdf({ document: documentData, summary, length, summaryText
     cursorY += 22;
   }
 
+  function writeBullet(text) {
+    const cleaned = cleanDisplaySentence(text);
+
+    if (!cleaned) {
+      return;
+    }
+
+    const cells = cleaned.split(/\s+\|\s+/).map((cell) => cell.trim()).filter(Boolean);
+
+    if (cells.length >= 2 && cells.length <= 4) {
+      writeComparisonRow(cells);
+      return;
+    }
+
+    const fontSize = pdfType === "quick" ? 9.7 : 10.6;
+    const lineHeight = pdfType === "quick" ? 13.5 : 16;
+    const bulletIndent = 14;
+    const lines = pdf.splitTextToSize(cleaned, contentWidth - bulletIndent);
+    ensureSpace(lines.length * lineHeight + 5);
+    pdf.setFillColor(245, 179, 1);
+    pdf.circle(margin + 3, cursorY - 3, 1.8, "F");
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(fontSize);
+    pdf.setTextColor(35, 45, 70);
+    lines.forEach((line) => {
+      pdf.text(line, margin + bulletIndent, cursorY);
+      cursorY += lineHeight;
+    });
+    cursorY += pdfType === "quick" ? 2 : 4;
+  }
+
+  function writeComparisonRow(cells) {
+    const gap = 6;
+    const cellWidth = (contentWidth - gap * (cells.length - 1)) / cells.length;
+    const wrappedCells = cells.map((cell) => pdf.splitTextToSize(cell, cellWidth - 12));
+    const rowHeight = Math.max(...wrappedCells.map((lines) => lines.length)) * 13 + 12;
+    ensureSpace(rowHeight + 5);
+
+    wrappedCells.forEach((lines, index) => {
+      const x = margin + index * (cellWidth + gap);
+      pdf.setFillColor(index % 2 ? 246 : 250, index % 2 ? 248 : 247, index % 2 ? 253 : 238);
+      pdf.setDrawColor(219, 226, 244);
+      pdf.roundedRect(x, cursorY - 10, cellWidth, rowHeight, 3, 3, "FD");
+      pdf.setFont("helvetica", index === 0 ? "bold" : "normal");
+      pdf.setFontSize(9.2);
+      pdf.setTextColor(35, 45, 70);
+      lines.forEach((line, lineIndex) => {
+        pdf.text(line, x + 6, cursorY + lineIndex * 13);
+      });
+    });
+    cursorY += rowHeight + 5;
+  }
+
+  function writeQuestionAnswer(item, index) {
+    const question = cleanDisplaySentence(item?.question || item);
+    const answer = cleanDisplaySentence(item?.answer || "");
+
+    if (!question) {
+      return;
+    }
+
+    ensureSpace(answer ? 92 : 54);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.setTextColor(92, 106, 134);
+    pdf.text(`Question ${index + 1}`, margin, cursorY);
+    cursorY += 16;
+
+    writeWrappedText(question, {
+      fontSize: 11,
+      lineHeight: 16,
+      color: [10, 45, 122],
+      style: "bold"
+    });
+    cursorY += 8;
+
+    if (answer) {
+      ensureSpace(38);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(10);
+      pdf.setTextColor(92, 106, 134);
+      pdf.text("Answer", margin, cursorY);
+      cursorY += 16;
+      writeWrappedText(answer, {
+        fontSize: 10.5,
+        lineHeight: 16,
+        color: [35, 45, 70]
+      });
+    }
+
+    cursorY += 10;
+    ensureSpace(18);
+    pdf.setDrawColor(224, 229, 239);
+    pdf.line(margin, cursorY, pageWidth - margin, cursorY);
+    cursorY += 20;
+  }
+
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(24);
   pdf.setTextColor(10, 45, 122);
@@ -6279,7 +6894,7 @@ function exportSummaryPdf({ document: documentData, summary, length, summaryText
   pdf.setFontSize(10);
   pdf.setTextColor(92, 106, 134);
   const metadata = [
-    `${capitalize(length)} summary`,
+    pdfTypeLabel,
     `${formatFileType(documentData?.fileType)} document`,
     documentData?.pageCount ? `${documentData.pageCount} pages` : null,
     documentData?.subject || documentData?.folderName || null,
@@ -6291,41 +6906,27 @@ function exportSummaryPdf({ document: documentData, summary, length, summaryText
     color: [92, 106, 134]
   });
 
-  writeSectionTitle("AI Summary");
-  splitSummaryIntoSections(summaryText, length).forEach((section) => {
+  writeSectionTitle(pdfType === "quick" ? "Quick Revision Notes" : "Detailed Study Notes");
+  sections.forEach((section) => {
     ensureSpace(42);
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(11);
-    pdf.setTextColor(245, 179, 1);
+    pdf.setFontSize(pdfType === "quick" ? 11 : 12);
+    pdf.setTextColor(10, 45, 122);
     pdf.text(section.title, margin, cursorY);
-    cursorY += 17;
-    writeWrappedText(section.text, {
-      fontSize: 11,
-      lineHeight: 17,
-      color: [35, 45, 70]
-    });
-    cursorY += 8;
+    cursorY += pdfType === "quick" ? 15 : 18;
+    section.items.forEach(writeBullet);
+    cursorY += pdfType === "quick" ? 5 : 9;
   });
 
-  writeSectionTitle("Important Questions");
+  const shouldAppendQuestions = pdfType !== "quick";
 
-  if (questions?.length) {
-    questions.forEach((item, index) => {
-      const questionText = cleanDisplaySentence(item.question || item);
-      ensureSpace(28);
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(10.5);
-      pdf.setTextColor(10, 45, 122);
-      pdf.text(`${index + 1}.`, margin, cursorY);
-      writeWrappedText(questionText, {
-        fontSize: 11,
-        lineHeight: 17,
-        color: [35, 45, 70],
-        indent: 24
-      });
-      cursorY += 5;
-    });
-  } else {
+  if (shouldAppendQuestions) {
+    writeSectionTitle("Important Questions");
+  }
+
+  if (shouldAppendQuestions && questions?.length) {
+    questions.slice(0, 10).forEach(writeQuestionAnswer);
+  } else if (shouldAppendQuestions) {
     writeWrappedText("No important questions are available for this summary yet.", {
       fontSize: 11,
       lineHeight: 17,
@@ -6334,15 +6935,38 @@ function exportSummaryPdf({ document: documentData, summary, length, summaryText
   }
 
   addFooter();
-  pdf.save(buildSummaryPdfFilename(title));
+  pdf.save(buildSummaryPdfFilename(title, pdfType));
 }
 
-function buildSummaryPdfFilename(title) {
-  const safeTitle = String(title || "Summary")
-    .replace(/[^a-z0-9]+/gi, "")
-    .slice(0, 80);
+function normalizePdfSections(pdfSections, summaryText, length) {
+  if (Array.isArray(pdfSections) && pdfSections.length) {
+    return pdfSections
+      .map((section, index) => ({
+        title: cleanTopicTitle(section?.heading || section?.title, index, section?.items?.join(" ")),
+        items: (Array.isArray(section?.items) ? section.items : [section?.text || section?.content])
+          .map(cleanDisplaySentence)
+          .filter(Boolean)
+      }))
+      .filter((section) => section.items.length);
+  }
 
-  return `StudyMindAI_Summary_${safeTitle || "Summary"}.pdf`;
+  return splitSummaryIntoSections(summaryText, length).map((section) => ({
+    title: section.title,
+    items: section.text
+      .split(/\n+|(?<=[.!?])\s+(?=[A-Z0-9])/)
+      .map(cleanDisplaySentence)
+      .filter(Boolean)
+  }));
+}
+
+function buildSummaryPdfFilename(title, pdfType = "detailed") {
+  const safeTitle = String(title || "Summary")
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+  const suffix = pdfType === "quick" ? "Quick_Revision" : "Detailed_Notes";
+
+  return `${safeTitle || "StudyMind"}_${suffix}.pdf`;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

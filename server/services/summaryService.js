@@ -2,9 +2,14 @@ import mongoose from "mongoose";
 import Document from "../models/Document.js";
 import Summary from "../models/Summary.js";
 import ImportantQuestion from "../models/ImportantQuestion.js";
-import { generateStudyAssistantAnswer, generateSummary } from "./aiService.js";
+import { generatePdfStudyNotes, generateStudyAssistantAnswer, generateSummary } from "./aiService.js";
 import { isDatabaseConnected } from "../config/db.js";
 import { buildSelectedPdfSource } from "./selectedPdfSourceService.js";
+import {
+  formatPdfNotesAsText,
+  normalizePdfStudyNotes,
+  sanitizeAiText
+} from "./studyContentFormatter.js";
 
 export async function getSummaryForUser(user, options = {}) {
   if (!user?.id || !isDatabaseConnected()) {
@@ -34,13 +39,6 @@ export async function getSummaryForUser(user, options = {}) {
         source: "database"
       }
     };
-  }
-
-  if (!hasValidSummaryLengths(summary.content)) {
-    return generateSummaryForUser(user, {
-      documentId: document._id.toString(),
-      length: options.length || summary.activeLength
-    });
   }
 
   const questions = await ImportantQuestion.find({ summaryId: summary._id })
@@ -234,6 +232,74 @@ export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
   };
 }
 
+export async function generateSummaryPdfContentForUser(user, payload = {}) {
+  if (!user?.id || !isDatabaseConnected()) {
+    const error = new Error("MongoDB is not connected. Summary PDF generation requires stored summaries.");
+    error.status = 503;
+    throw error;
+  }
+
+  const pdfType = normalizePdfType(payload.pdfType);
+  const length = normalizeLength(payload.length || "detailed");
+  const document = await findSelectedDocument(user.id, payload.documentId);
+
+  if (!document) {
+    const error = new Error("No document found for this summary PDF.");
+    error.status = 404;
+    throw error;
+  }
+
+  const summary = await Summary.findOne({ userId: user.id, documentId: document._id }).lean();
+  const summaryText = String(
+    summary?.content?.detailed || summary?.content?.[length] || payload.summaryText || summary?.summaryText || ""
+  ).trim();
+
+  if (countWords(summaryText) < 40) {
+    const error = new Error("Generate a summary before downloading a PDF.");
+    error.status = 422;
+    throw error;
+  }
+
+  const questionContext = pdfType === "detailed"
+    ? normalizePdfQuestions(payload.questions)
+    : [];
+  const sourceMaterial = String(document.extractedText || "").trim();
+  const sourceParts = [
+    `Detailed AI summary:\n${summaryText}`,
+    sourceMaterial ? `Original extracted study material:\n${sourceMaterial}` : "",
+    questionContext.length
+      ? `Important questions already identified from this material:\n${questionContext.map((question, index) => `Q${index + 1}. ${question}`).join("\n")}`
+      : ""
+  ].filter(Boolean);
+  const pdfSourceText = sourceParts.join("\n\n");
+
+  const generated = await generatePdfStudyNotes(pdfSourceText, {
+    pdfType,
+    documentTitle: getDocumentDisplayName(document),
+    subject: document.subject
+  });
+  const normalizedPdf = normalizePdfStudyNotes(generated, pdfType);
+  const notes = formatPdfNotesAsText(normalizedPdf.sections);
+
+  if (!normalizedPdf.sections.length || countWords(notes) < 30) {
+    const error = new Error("AI did not return usable PDF notes. Please try again.");
+    error.status = 502;
+    throw error;
+  }
+
+  return {
+    pdfType,
+    title: normalizedPdf.title,
+    notes,
+    sections: normalizedPdf.sections,
+    importantQuestions: normalizedPdf.importantQuestions,
+    document: mapDocument(document),
+    meta: {
+      generatedAt: new Date().toISOString()
+    }
+  };
+}
+
 async function findSelectedDocument(userId, documentId) {
   if (documentId) {
     if (!mongoose.Types.ObjectId.isValid(documentId)) {
@@ -252,14 +318,19 @@ async function findSelectedDocument(userId, documentId) {
 
 function mapSummaryResponse(document, summary, questions, requestedLength) {
   const activeLength = normalizeLength(requestedLength || summary.activeLength);
+  const content = normalizeStoredSummaryContent(summary);
+  const displayedContent = content[activeLength]
+    || content.detailed
+    || content.medium
+    || content.short;
 
   return {
     document: mapDocument(document),
     summary: {
       id: summary._id.toString(),
       length: activeLength,
-      content: summary.content,
-      displayedContent: summary.content[activeLength],
+      content,
+      displayedContent,
       status: "Summary Generated",
       source: summary.source,
       folderId: summary.folderId?.toString?.() || null,
@@ -272,9 +343,25 @@ function mapSummaryResponse(document, summary, questions, requestedLength) {
     links: buildLinks(document._id),
     meta: {
       hasSummary: true,
-      source: "database"
+      source: "database",
+      needsRegeneration: !hasValidSummaryLengths(content)
     }
   };
+}
+
+function normalizeStoredSummaryContent(summary = {}) {
+  const fallback = cleanSummaryOutput(summary.summaryText);
+  const content = {
+    short: cleanSummaryOutput(summary.content?.short),
+    medium: cleanSummaryOutput(summary.content?.medium),
+    detailed: cleanSummaryOutput(summary.content?.detailed)
+  };
+
+  if (!content.short && !content.medium && !content.detailed && fallback) {
+    content[normalizeLength(summary.activeLength || summary.summaryLength)] = fallback;
+  }
+
+  return content;
 }
 
 function mapDocument(document) {
@@ -303,7 +390,7 @@ function mapQuestion(question) {
   return {
     id: question._id?.toString?.() || `question-${question.order}`,
     order: question.order,
-    question: question.question
+    question: sanitizeAiText(question.question, { preserveLines: false })
   };
 }
 
@@ -330,6 +417,19 @@ function buildLinks(documentId) {
 
 function normalizeLength(length = "short") {
   return ["short", "medium", "detailed"].includes(length) ? length : "short";
+}
+
+function normalizePdfType(pdfType = "detailed") {
+  return ["quick", "detailed"].includes(pdfType) ? pdfType : "detailed";
+}
+
+function normalizePdfQuestions(questions = []) {
+  return Array.isArray(questions)
+    ? questions
+        .map((question) => String(question?.question || question || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
 }
 
 function validateSummaryContent(content = {}) {
@@ -380,15 +480,7 @@ function validateImportantQuestions(questions) {
 }
 
 function cleanSummaryOutput(text) {
-  return String(text || "")
-    .replace(/\s+([,.;:!?])/g, "$1")
-    .replace(/:\./g, ".")
-    .replace(/\.{2,}/g, ".")
-    .split(/\r?\n/)
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter(Boolean)
-    .join("\n")
-    .trim();
+  return sanitizeAiText(text);
 }
 
 function countWords(text) {
@@ -396,16 +488,21 @@ function countWords(text) {
 }
 
 function hasValidSummaryLengths(content = {}) {
-  const shortWords = countWords(content.short);
-  const mediumWords = countWords(content.medium);
-  const detailedWords = countWords(content.detailed);
+  const normalized = {
+    short: cleanSummaryOutput(content.short),
+    medium: cleanSummaryOutput(content.medium),
+    detailed: cleanSummaryOutput(content.detailed)
+  };
+  const shortWords = countWords(normalized.short);
+  const mediumWords = countWords(normalized.medium);
+  const detailedWords = countWords(normalized.detailed);
 
-  return shortWords >= 60
-    && mediumWords >= 150
-    && detailedWords >= 500
-    && !hasFormattingNoise(content.short)
-    && !hasFormattingNoise(content.medium)
-    && !hasFormattingNoise(content.detailed);
+  return shortWords >= 45
+    && mediumWords >= 120
+    && detailedWords >= 350
+    && !hasFormattingNoise(normalized.short)
+    && !hasFormattingNoise(normalized.medium)
+    && !hasFormattingNoise(normalized.detailed);
 }
 
 function hasFormattingNoise(text) {

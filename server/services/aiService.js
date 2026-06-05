@@ -52,6 +52,20 @@ export async function generateQuizPerformanceInsight(context = {}) {
   });
 }
 
+export async function generatePdfStudyNotes(summaryContent, context = {}) {
+  ensureStudyMaterial(summaryContent, "PDF notes");
+  const pdfType = context.pdfType === "quick" ? "quick" : "detailed";
+  const prompt = pdfType === "quick"
+    ? buildQuickRevisionPrompt(summaryContent, context)
+    : buildDetailedNotesPrompt(summaryContent, context);
+
+  return generateStructuredJson({
+    prompt,
+    systemPrompt: "You are an expert study notes editor. Return structured JSON only.",
+    errorLabel: `${pdfType} PDF notes`
+  });
+}
+
 export function getActiveAiModelName() {
   if (process.env.GEMINI_API_KEY) {
     return GEMINI_MODEL;
@@ -150,7 +164,7 @@ async function generateWithOpenAI({ prompt, systemPrompt, errorLabel }) {
   return parseAiJson(response.choices?.[0]?.message?.content, errorLabel);
 }
 
-function buildSummaryPrompt(studyMaterial, context) {
+export function buildSummaryPrompt(studyMaterial, context = {}) {
   return `You are an expert educational summarizer.
 
 Generate study-friendly summaries from the provided study material.
@@ -168,13 +182,25 @@ Requirements:
 * Each section heading must read like a textbook chapter title and name the main topic of the whole section, such as "Cloud Service Models", "Deployment Models", "Virtualization", "Containers", "Storage Systems", "Memory Management", "Normalization", or "Scheduling Algorithms".
 * Do not create headings by copying the first sentence, first few words, quoted phrases, transition words, or fragments from the paragraph.
 * Never use fragment headings such as "Finally", "Here", "A Public Cloud", "This Means", or "In Addition".
-* Start with a short overview section, then cover the major source topics in 5 to 10 high-quality sections for detailed summaries.
+* Every summary must start with an "Overview" section that defines the main subject before discussing subtopics.
+* The first heading must be exactly "Overview" for short, medium, and detailed summaries.
+* The Overview paragraph must explain what the document's main subject is, its basic purpose, and the main scope covered by the document.
+* The Overview must be a genuine document overview, not content copied from the first narrow subtopic.
+* Do not start directly with a subtopic such as keys, normalization, architecture, service models, or levels.
+* The short summary is for concise revision. Use 3 to 5 meaningful sections.
+* Each short section must contain one concise but complete paragraph. Do not use bullets, numbered lists, fragments, or detailed explanations.
+* The medium summary is for structured understanding. Use 5 to 7 meaningful sections.
+* Each medium section must contain one short, professional paragraph with enough context to understand the concept.
+* Format every short and medium section on its own line as: "Professional Topic Heading: complete paragraph".
+* Never place all short or medium concepts inside one section or one giant paragraph.
+* The detailed summary is full study material. Start with a short overview section, then cover the major source topics in 5 to 10 high-quality sections with complete explanations.
 * Prefer fewer strong sections that combine related ideas over many tiny sections.
 * Preserve important definitions, processes, comparisons, examples, and exam-relevant points.
 * Never use generic headings such as "Study Note 1", "Study Note 2", "Study Note 3", "Study Note 7", "Revision Strategy", "Exam Focus", "Important Note", "Learning Point", "Topic 1", or "Topic 2" unless that exact phrase appears as a real heading in the source material.
-* Format each section inside the summary strings as: "Topic Heading: concise explanation". Separate sections with a newline.
-* short must be 60 to 100 words.
-* medium must be 150 to 250 words.
+* Do not use bullet points, numbered lists, markdown bullets, asterisks, hashes, or code fences in any summary string.
+* Normalize technical abbreviations, including DBMS, SQL, ACID, DDL, DML, DCL, TCL, ER, IaaS, PaaS, SaaS, AWS, and API.
+* short must be 80 to 140 words.
+* medium must be 220 to 350 words.
 * detailed must be 500 to 700 words.
 * Generate 5 important exam-oriented questions from the same material.
 
@@ -288,6 +314,91 @@ Total questions: ${Number(context.totalQuestions || 0)}
 
 Question performance data:
 ${JSON.stringify(compactAnswers, null, 2)}`;
+}
+
+export function buildQuickRevisionPrompt(summaryContent, context = {}) {
+  return `Create a compact but substantial exam revision sheet from the provided source material.
+
+Return JSON only in this exact shape:
+{
+  "title": "Quick Revision PDF",
+  "sections": [
+    {
+      "heading": "Overview",
+      "items": ["One concise revision point", "Another concise revision point"]
+    }
+  ],
+  "importantQuestions": []
+}
+
+Rules:
+* Use only information present in the source material.
+* Do not invent facts.
+* Create a 2-3 page exam revision sheet when the source contains enough material.
+* Aim for roughly 700-950 words for normal-sized source material, which should format into about 2-3 A4 pages.
+* This must be a useful revision sheet, not a tiny summary or bare outline.
+* Do not include Important Questions.
+* Do not include any Q&A, practice questions, or answer section.
+* Use concise bullets and a revision-friendly structure.
+* Include a one-line Topic Overview, Key Concepts, Important Definitions, Important Facts, Comparison Points or compact comparison rows where useful, Formulae or Rules when present, Exam Keywords, Quick Recap, and Must-Remember Points.
+* Avoid long paragraphs, repeated explanations, and unnecessary detail.
+* Each item should normally be one or two concise sentences.
+* Use complete, meaningful headings only. Never turn sentence fragments, product lists, examples, or comparison-row text into headings.
+* Put fragment-like content such as "Both offer resources", "Adjusts instances based on demand", "AWS cloud provider", or "Docker and Kubernetes" inside section items.
+* Do not use markdown formatting symbols such as *, **, #, ##, ###, or code fences.
+* Do not include markdown inside any JSON string.
+* Normalize technical capitalization, including IaaS, PaaS, SaaS, AWS, EC2, S3, IAM, CDN, VPC, DevOps, and CI/CD.
+* Return importantQuestions as an empty array.
+
+Document title: ${context.documentTitle || "Study Material"}
+Subject: ${context.subject || "General Studies"}
+
+Source material:
+${trimMaterial(summaryContent, 26000)}`;
+}
+
+export function buildDetailedNotesPrompt(summaryContent, context = {}) {
+  return `Create complete, polished study notes from the provided source material.
+
+Return JSON only in this exact shape:
+{
+  "title": "Detailed Notes PDF",
+  "sections": [
+    {
+      "heading": "Overview",
+      "items": ["A clear explanation in complete sentences"]
+    }
+  ],
+  "importantQuestions": [
+    {
+      "question": "What is the concept?",
+      "answer": "A short answer supported by the source."
+    }
+  ]
+}
+
+Rules:
+* Use only information present in the source material.
+* Do not invent facts.
+* Target around 6-7 A4 pages when the source contains enough material.
+* Aim for roughly 1800-2200 words for normal-sized source material, but do not add filler to reach a page or word count.
+* Include Overview, Main Concepts, Detailed Explanations, Examples where useful, Important Points, and Key Takeaways / Recap.
+* Include 5-8 Important Questions in importantQuestions.
+* Give each question a concise 1-3 sentence answer, normally 35-75 words, only when the source supports it.
+* If the source does not confidently support an answer, return an empty answer string instead of guessing.
+* Keep Important Questions separate from the notes sections.
+* Use complete, meaningful topic headings and full explanations.
+* Never use sentence fragments, product lists, examples, comparison cells, or phrases such as "Both Offer Resource", "Adjusts Instances Based", "Cloud Providers AWS", "Gmail Salesforce", or "Docker Kubernetes" as headings.
+* Convert such fragments into normal items under a nearby meaningful heading.
+* Do not use markdown formatting symbols such as *, **, #, ##, ###, or code fences.
+* Do not include markdown inside any JSON string.
+* Normalize technical capitalization, including IaaS, PaaS, SaaS, AWS, EC2, S3, IAM, CDN, VPC, DevOps, and CI/CD.
+
+Document title: ${context.documentTitle || "Study Material"}
+Subject: ${context.subject || "General Studies"}
+
+Source material:
+${trimMaterial(summaryContent, 36000)}`;
 }
 
 function buildFlashcardPrompt(studyMaterial, context) {
