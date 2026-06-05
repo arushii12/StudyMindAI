@@ -179,19 +179,19 @@ button {
 .loading-banner {
   position: relative;
   display: flex;
-  width: 100%;
+  width: min(100%, 760px);
   align-items: center;
   gap: 12px;
   overflow: hidden;
   border: 1px solid rgba(244, 180, 0, 0.42);
   border-radius: 18px;
-  background: #fff8d6;
+  background: #fff6d8;
   box-shadow:
     0 10px 24px rgba(2, 11, 45, 0.12),
     0 0 0 3px rgba(245, 179, 1, 0.06);
   color: #06102f;
+  margin-inline: 2px;
   padding: 12px 16px;
-  animation: loading-banner-in 180ms ease-out both;
 }
 
 .loading-banner.compact {
@@ -227,8 +227,8 @@ button {
 }
 
 .loading-spinner {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   flex: 0 0 auto;
   border: 3px solid #ffeaa3;
   border-top-color: #f4b400;
@@ -250,7 +250,7 @@ button {
   justify-content: center;
   gap: 9px;
   border-color: rgba(244, 180, 0, 0.6);
-  background: #fff8d6;
+  background: #fff6d8;
   color: #06102f;
   box-shadow: 0 10px 24px rgba(245, 179, 1, 0.16);
 }
@@ -267,18 +267,6 @@ button {
 @keyframes loading-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes loading-banner-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -5565,7 +5553,7 @@ button {
 
 .loading-button.loading-button {
   border-color: rgba(244, 180, 0, 0.6) !important;
-  background: #fff8d6 !important;
+  background: #fff6d8 !important;
   color: #06102f !important;
 }
 

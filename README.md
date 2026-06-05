@@ -257,4 +257,4 @@ For production-grade uploads, move PDF storage to a durable service such as:
 
 ## Author
 
-StudyMind AI project maintainer.
+Arushi

@@ -133,6 +133,7 @@ function LoadingBanner({
 }) {
   const longMessage = useLongLoadingMessage(longMessages);
   const displayedDetail = longMessage || detail;
+  const displayTitle = cleanLoadingTitle(title);
 
   return (
     <div
@@ -143,11 +144,15 @@ function LoadingBanner({
     >
       <LoadingSpinner />
       <div>
-        <strong>{title}<AnimatedDots /></strong>
+        <strong>{displayTitle}<AnimatedDots /></strong>
         <span>{displayedDetail}</span>
       </div>
     </div>
   );
+}
+
+function cleanLoadingTitle(title = "Loading") {
+  return String(title).replace(/\.+$/g, "").trim() || "Loading";
 }
 
 function LoadingButton({
@@ -168,7 +173,7 @@ function LoadingButton({
       {isLoading ? (
         <>
           <LoadingSpinner size="sm" />
-          <span>{loadingLabel}<AnimatedDots /></span>
+          <span>{cleanLoadingTitle(loadingLabel)}<AnimatedDots /></span>
         </>
       ) : children}
     </button>
@@ -979,8 +984,8 @@ function Header({ user, uploadState, setUploadState }) {
       </header>
       {uploadState.status === "loading" && (
         <LoadingBanner
-          title={uploadState.message || "Uploading PDF"}
-          detail="Extracting text and preparing AI study content."
+          title="Uploading PDF"
+          detail="Saving your document to the library."
         />
       )}
       {uploadState.status !== "idle" && uploadState.status !== "loading" && (
@@ -1710,8 +1715,24 @@ function LibraryPage() {
 
       {message.text && message.type === "idle" && (
         <LoadingBanner
-          title={message.text}
-          detail="Analyzing content and preparing AI insights."
+          title={
+            message.text.toLowerCase().includes("upload")
+              ? "Uploading PDF"
+              : message.text.toLowerCase().includes("quiz")
+                ? "Generating Quiz"
+                : message.text.toLowerCase().includes("flashcard")
+                  ? "Generating Flashcards"
+                  : "Generating summary"
+          }
+          detail={
+            message.text.toLowerCase().includes("upload")
+              ? "Saving your document to the library."
+              : message.text.toLowerCase().includes("quiz")
+                ? "Creating questions from your study material."
+                : message.text.toLowerCase().includes("flashcard")
+                  ? "Extracting key concepts for revision."
+                  : "Analyzing content and preparing AI insights."
+          }
         />
       )}
       {message.text && message.type !== "idle" && (
@@ -3076,8 +3097,8 @@ function SummaryPage() {
     return (
       <>
         <LoadingBanner
-          title="Loading AI summary"
-          detail="Fetching the document summary and review material."
+          title="Loading AI Summary"
+          detail="Fetching document summary and review material."
         />
         <SummarySkeleton />
       </>
@@ -3336,14 +3357,14 @@ function SummaryPage() {
 
       {quizGeneration.status === "loading" && (
         <LoadingBanner
-          title={quizGeneration.message || "Generating quiz"}
-          detail="Creating questions, answer choices, and explanations."
+          title="Generating Quiz"
+          detail="Creating questions from your study material."
         />
       )}
       {flashcardGeneration.status === "loading" && (
         <LoadingBanner
-          title={flashcardGeneration.message || "Generating flashcards"}
-          detail="Turning key concepts into quick revision cards."
+          title="Generating Flashcards"
+          detail="Extracting key concepts for revision."
         />
       )}
 
@@ -3562,8 +3583,8 @@ function StudyAssistantChat({
           <article className="study-chat-message assistant thinking">
             <LoadingBanner
               compact
-              title="Thinking"
-              detail="Reading the notes and preparing a helpful answer."
+              title="AI Tutor is thinking"
+              detail="Preparing a helpful explanation."
             />
           </article>
         )}
@@ -3976,8 +3997,8 @@ function QuizPage() {
 
       {isGenerating && (
         <LoadingBanner
-          title="Generating quiz"
-          detail="Creating questions, answer choices, and explanations."
+          title="Generating Quiz"
+          detail="Creating questions from your study material."
         />
       )}
 
@@ -4668,8 +4689,8 @@ function FlashcardsPage() {
 
       {isGenerating && (
         <LoadingBanner
-          title="Generating flashcards"
-          detail="Turning key concepts into quick revision cards."
+          title="Generating Flashcards"
+          detail="Extracting key concepts for revision."
         />
       )}
 
