@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ClipboardList,
   Clock3,
+  Copy,
   Download,
   FileText,
   Flame,
@@ -28,10 +29,12 @@ import {
   MoreVertical,
   Maximize2,
   Minimize2,
+  NotebookPen,
   Pencil,
   Plus,
   RefreshCw,
   Send,
+  Save,
   Sparkles,
   Target,
   Trash2,
@@ -54,6 +57,7 @@ const navigationItems = [
   { label: "Flashcards", icon: BookOpen, page: "flashcards", href: "#flashcards" },
   { label: "Quizzes", icon: Brain, page: "quizzes", href: "#quizzes" },
   { label: "Review", icon: Bookmark, page: "review", href: "#review" },
+  { label: "Notes", icon: NotebookPen, page: "notes", href: "#notes" },
   { label: "How It Works", icon: Laptop, page: "how-it-works", href: "#how-it-works" },
   { label: "Profile", icon: UserCircle, page: "profile", href: "#profile" }
 ];
@@ -355,6 +359,8 @@ function App() {
           <FlashcardsPage />
         ) : page === "review" ? (
           <ReviewPage />
+        ) : page === "notes" ? (
+          <NotesPage />
         ) : page === "how-it-works" ? (
           <HowItWorksPage />
         ) : page === "profile" ? (
@@ -2885,6 +2891,277 @@ function PdfCanvasPage({ pdfDocument, pageNumber, scale }) {
   );
 }
 
+function NotesPage() {
+  const [notes, setNotes] = useState([]);
+  const [selectedNote, setSelectedNote] = useState(null);
+  const [form, setForm] = useState({ title: "", content: "" });
+  const [mode, setMode] = useState("list");
+  const [status, setStatus] = useState("loading");
+  const [message, setMessage] = useState({ status: "idle", message: "" });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  useAutoDismissStatus(message, setMessage);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadNotes() {
+      try {
+        setStatus("loading");
+        const response = await fetch("/api/notes", { signal: controller.signal });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Unable to load notes.");
+        }
+
+        setNotes(data.notes || []);
+        setStatus("success");
+      } catch (loadError) {
+        if (loadError.name === "AbortError") {
+          return;
+        }
+
+        setMessage({ status: "error", message: loadError.message || "Unable to load notes." });
+        setStatus("error");
+      }
+    }
+
+    loadNotes();
+    return () => controller.abort();
+  }, []);
+
+  async function handleCreateNote() {
+    try {
+      setMessage({ status: "loading", message: "Creating note..." });
+      const response = await fetch("/api/notes", { method: "POST" });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to create note.");
+      }
+
+      setNotes((current) => [data.note, ...current]);
+      openNote(data.note);
+      setMessage({ status: "success", message: data.message || "Note created successfully." });
+    } catch (createError) {
+      setMessage({ status: "error", message: createError.message || "Unable to create note." });
+    }
+  }
+
+  function openNote(note) {
+    setSelectedNote(note);
+    setForm({ title: note.title, content: note.content || "" });
+    setMode("view");
+  }
+
+  function returnToList() {
+    setSelectedNote(null);
+    setForm({ title: "", content: "" });
+    setMode("list");
+  }
+
+  function startEditing() {
+    setForm({
+      title: selectedNote?.title || "Untitled Note",
+      content: selectedNote?.content || ""
+    });
+    setMode("edit");
+  }
+
+  async function handleSaveNote() {
+    if (!selectedNote?.id) {
+      return;
+    }
+
+    try {
+      setMessage({ status: "loading", message: "Saving note..." });
+      const response = await fetch(`/api/notes/${selectedNote.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to save note.");
+      }
+
+      setSelectedNote(data.note);
+      setNotes((current) => current.map((note) => note.id === data.note.id ? data.note : note));
+      setMode("view");
+      setMessage({ status: "success", message: data.message || "Note saved successfully." });
+    } catch (saveError) {
+      setMessage({ status: "error", message: saveError.message || "Unable to save note." });
+    }
+  }
+
+  async function handleDeleteNote() {
+    if (!selectedNote?.id) {
+      return;
+    }
+
+    try {
+      setMessage({ status: "loading", message: "Deleting note..." });
+      const response = await fetch(`/api/notes/${selectedNote.id}`, { method: "DELETE" });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to delete note.");
+      }
+
+      setNotes((current) => current.filter((note) => note.id !== selectedNote.id));
+      setDeleteConfirmOpen(false);
+      returnToList();
+      setMessage({ status: "success", message: data.message || "Note deleted successfully." });
+    } catch (deleteError) {
+      setDeleteConfirmOpen(false);
+      setMessage({ status: "error", message: deleteError.message || "Unable to delete note." });
+    }
+  }
+
+  function handleExportNotePdf() {
+    if (!selectedNote) {
+      return;
+    }
+
+    try {
+      exportNotePdf(selectedNote);
+      setMessage({ status: "success", message: "Note PDF downloaded." });
+    } catch {
+      setMessage({ status: "error", message: "Unable to export note PDF." });
+    }
+  }
+
+  if (status === "loading") {
+    return <LoadingBanner title="Loading notes" detail="Opening your revision notebook." />;
+  }
+
+  return (
+    <div className="notes-page">
+      <header className="notes-header">
+        <div>
+          <span className="summary-section-label">Revision Notebook</span>
+          <h1>Notes</h1>
+        </div>
+        {mode === "list" && (
+          <LoadingButton
+            className="notes-primary-action"
+            isLoading={message.status === "loading"}
+            loadingLabel="Creating note"
+            onClick={handleCreateNote}
+            type="button"
+          >
+            <Plus size={18} />
+            <span>New Note</span>
+          </LoadingButton>
+        )}
+      </header>
+
+      {message.status !== "idle" && message.status !== "loading" && (
+        <div className={`summary-export-status ${message.status}`}>
+          <span>{message.message}</span>
+        </div>
+      )}
+
+      {mode === "list" && (
+        <section className="notes-list-panel">
+          {notes.length ? (
+            <div className="notes-list" aria-label="Personal notes">
+              {notes.map((note) => (
+                <button key={note.id} type="button" onClick={() => openNote(note)}>
+                  <FileText size={19} />
+                  <span>{note.title}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <EmptyPanel
+              title="No notes yet."
+              text="Create a blank note to start your personal revision notebook."
+            />
+          )}
+        </section>
+      )}
+
+      {mode !== "list" && selectedNote && (
+        <section className="note-workspace">
+          {mode === "view" ? (
+            <>
+              <button className="note-back-button" type="button" onClick={returnToList}>
+                Back to Notes
+              </button>
+              <div className="note-workspace-heading">
+                <h2>{selectedNote.title}</h2>
+                <div>
+                  <button
+                    aria-label={`Export ${selectedNote.title} as PDF`}
+                    title="Export note as PDF"
+                    type="button"
+                    onClick={handleExportNotePdf}
+                  >
+                    <Download size={17} />
+                    <span>PDF</span>
+                  </button>
+                  <button type="button" onClick={startEditing}>
+                    <Pencil size={17} />
+                    <span>Edit</span>
+                  </button>
+                  <button className="danger" type="button" onClick={() => setDeleteConfirmOpen(true)}>
+                    <Trash2 size={17} />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </div>
+              <div className="note-content-view">
+                {selectedNote.content || "This note is empty."}
+              </div>
+            </>
+          ) : (
+            <div className="note-editor">
+              <label>
+                <span>Title</span>
+                <input
+                  maxLength={120}
+                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                  type="text"
+                  value={form.title}
+                />
+              </label>
+              <label>
+                <span>Content</span>
+                <textarea
+                  onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
+                  value={form.content}
+                />
+              </label>
+              <LoadingButton
+                className="notes-primary-action"
+                isLoading={message.status === "loading"}
+                loadingLabel="Saving note"
+                onClick={handleSaveNote}
+                type="button"
+              >
+                <Save size={17} />
+                <span>Save</span>
+              </LoadingButton>
+            </div>
+          )}
+        </section>
+      )}
+
+      {deleteConfirmOpen && selectedNote && (
+        <ConfirmationModal
+          title="Delete this note?"
+          message={`"${selectedNote.title}" will be permanently deleted.`}
+          isConfirming={message.status === "loading"}
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={handleDeleteNote}
+        />
+      )}
+    </div>
+  );
+}
+
 function SummaryPage() {
   const documentId = getHashParams().get("documentId");
   const [summaryData, setSummaryData] = useState(null);
@@ -2916,6 +3193,10 @@ function SummaryPage() {
     status: "idle",
     message: ""
   });
+  const [copySummaryState, setCopySummaryState] = useState({
+    status: "idle",
+    message: ""
+  });
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatStatus, setChatStatus] = useState("idle");
@@ -2929,6 +3210,7 @@ function SummaryPage() {
   useAutoDismissStatus(pdfExportState, setPdfExportState);
   useAutoDismissStatus(deleteState, setDeleteState);
   useAutoDismissStatus(saveSummaryState, setSaveSummaryState);
+  useAutoDismissStatus(copySummaryState, setCopySummaryState);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -3380,6 +3662,29 @@ function SummaryPage() {
     );
   }
 
+  async function handleCopySummary() {
+    const currentSummaryText = summaryData?.summary?.content?.[length]
+      || summaryData?.summary?.displayedContent
+      || "";
+
+    if (!currentSummaryText.trim()) {
+      setCopySummaryState({ status: "error", message: "Generate a summary before copying it." });
+      return;
+    }
+
+    try {
+      const cleanSummary = formatSummaryForClipboard(
+        summaryData?.document?.title || "Study Summary",
+        currentSummaryText,
+        length
+      );
+      await copyTextToClipboard(cleanSummary);
+      setCopySummaryState({ status: "success", message: "Summary copied successfully" });
+    } catch {
+      setCopySummaryState({ status: "error", message: "Unable to copy summary." });
+    }
+  }
+
   if (status === "empty") {
     return (
       <section className="state-card">
@@ -3422,6 +3727,15 @@ function SummaryPage() {
 
         <div className="summary-header-actions">
           <div className="summary-header-action-row">
+            <button
+              className="summary-primary-action secondary"
+              type="button"
+              onClick={handleCopySummary}
+              disabled={!summary}
+            >
+              <Copy size={17} />
+              <span>Copy Summary</span>
+            </button>
             <LoadingButton
               className="summary-primary-action"
               isLoading={isRegenerating}
@@ -3534,6 +3848,11 @@ function SummaryPage() {
       {saveSummaryState.status !== "idle" && saveSummaryState.status !== "loading" && (
         <div className={`summary-export-status ${saveSummaryState.status}`}>
           <span>{saveSummaryState.message}</span>
+        </div>
+      )}
+      {copySummaryState.status !== "idle" && (
+        <div className={`summary-export-status ${copySummaryState.status}`}>
+          <span>{copySummaryState.message}</span>
         </div>
       )}
 
@@ -6488,6 +6807,80 @@ function scoreOverviewSentence(sentence, sectionIndex) {
   return score;
 }
 
+function formatSummaryForClipboard(title, text, length) {
+  const hasBulletLines = /(?:^|\n)\s*[-*+•]\s+\S/m.test(String(text || ""));
+  const rawLines = String(text || "").replace(/\r\n/g, "\n").split(/\n+/);
+  const formattedRawLines = rawLines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const bulletMatch = line.match(/^\s*[-*+•]\s+(.+)$/);
+
+      if (bulletMatch) {
+        return `• ${cleanClipboardText(bulletMatch[1])}`;
+      }
+
+      const headingMatch = line.match(/^\s*#{1,6}\s+(.+)$/);
+
+      if (headingMatch) {
+        return cleanTopicTitle(headingMatch[1], index);
+      }
+
+      const separatorIndex = line.indexOf(":");
+
+      if (separatorIndex > 0 && separatorIndex <= 90) {
+        const heading = cleanTopicTitle(line.slice(0, separatorIndex), index, line.slice(separatorIndex + 1));
+        const paragraph = cleanClipboardText(line.slice(separatorIndex + 1));
+        return `${heading}\n\n${paragraph}`;
+      }
+
+      return cleanClipboardText(line);
+    });
+  const displayedContent = buildSummaryDisplaySections(text, length)
+    .map((section) => `${section.title}\n\n${section.text}`)
+    .join("\n\n");
+  const content = hasBulletLines
+    ? formattedRawLines.join("\n\n")
+    : displayedContent;
+
+  return `${stripMarkdownArtifacts(title).toUpperCase()}\n\n${content}`.trim();
+}
+
+function cleanClipboardText(text) {
+  return normalizeTechnicalCapitalization(String(text || "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/^\s*#{1,6}\s*/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/[ \t]+/g, " ")
+    .trim());
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall back for browsers that expose Clipboard API but deny the request.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+
+  if (!copied) {
+    throw new Error("Clipboard copy failed.");
+  }
+}
+
 function normalizeCompactSummaryParagraph(text) {
   const parts = stripMarkdownArtifacts(text)
     .split(/\n+|;+/)
@@ -7038,6 +7431,60 @@ function exportSummaryPdf({
   pdf.save(buildSummaryPdfFilename(title, pdfType));
 }
 
+function exportNotePdf(note) {
+  const pdf = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 54;
+  const contentWidth = pageWidth - margin * 2;
+  const bottomLimit = pageHeight - margin;
+  const title = String(note?.title || "Untitled Note");
+  const content = String(note?.content || "");
+  let cursorY = margin;
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(20);
+  pdf.setTextColor(20, 20, 20);
+  const titleLines = pdf.splitTextToSize(title, contentWidth);
+
+  titleLines.forEach((line) => {
+    pdf.text(line, margin, cursorY);
+    cursorY += 26;
+  });
+
+  cursorY += 16;
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(11);
+  pdf.setTextColor(30, 30, 30);
+
+  content.replace(/\r\n/g, "\n").split("\n").forEach((sourceLine) => {
+    if (!sourceLine.length) {
+      cursorY += 16;
+
+      if (cursorY > bottomLimit) {
+        pdf.addPage();
+        cursorY = margin;
+      }
+
+      return;
+    }
+
+    const wrappedLines = pdf.splitTextToSize(sourceLine, contentWidth);
+
+    wrappedLines.forEach((line) => {
+      if (cursorY + 16 > bottomLimit) {
+        pdf.addPage();
+        cursorY = margin;
+      }
+
+      pdf.text(line, margin, cursorY);
+      cursorY += 16;
+    });
+  });
+
+  pdf.save(buildNotePdfFilename(title));
+}
+
 function normalizePdfSections(pdfSections, summaryText, length) {
   if (Array.isArray(pdfSections) && pdfSections.length) {
     return pdfSections
@@ -7067,6 +7514,14 @@ function buildSummaryPdfFilename(title, pdfType = "detailed") {
   const suffix = pdfType === "quick" ? "Quick_Revision" : "Detailed_Notes";
 
   return `${safeTitle || "StudyMind"}_${suffix}.pdf`;
+}
+
+function buildNotePdfFilename(title) {
+  const safeTitle = String(title || "Untitled Note")
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `${safeTitle || "Untitled-Note"}.pdf`;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

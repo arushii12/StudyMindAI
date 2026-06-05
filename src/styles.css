@@ -3265,6 +3265,169 @@ button {
   max-width: 1440px;
 }
 
+.notes-page {
+  display: grid;
+  max-width: 1200px;
+  gap: 18px;
+}
+
+.notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid rgba(245, 179, 1, 0.36);
+  border-radius: 16px;
+  background: var(--secondary-bg);
+  padding: 24px;
+}
+
+.notes-header h1 {
+  margin: 7px 0 0;
+  color: var(--warm-heading);
+  font-size: 40px;
+  line-height: 1.1;
+}
+
+.notes-primary-action,
+.note-workspace-heading button,
+.note-back-button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(245, 179, 1, 0.4);
+  border-radius: 11px;
+  background: var(--accent);
+  padding: 0 14px;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.notes-list-panel,
+.note-workspace {
+  border: 1px solid rgba(184, 196, 224, 0.2);
+  border-radius: 14px;
+  background: var(--secondary-bg);
+  padding: 22px;
+}
+
+.notes-list {
+  display: grid;
+}
+
+.notes-list button {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(184, 196, 224, 0.16);
+  background: transparent;
+  padding: 0 10px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.notes-list button:last-child {
+  border-bottom: 0;
+}
+
+.notes-list button:hover {
+  background: rgba(10, 45, 122, 0.54);
+}
+
+.note-workspace {
+  display: grid;
+  gap: 22px;
+}
+
+.note-back-button {
+  width: fit-content;
+  background: var(--card-bg);
+}
+
+.note-workspace-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.note-workspace-heading h2 {
+  margin: 0;
+  color: var(--gold);
+  font-size: 25px;
+}
+
+.note-workspace-heading > div {
+  display: flex;
+  gap: 10px;
+}
+
+.note-workspace-heading button {
+  background: var(--card-bg);
+}
+
+.note-workspace-heading button.danger {
+  border-color: rgba(239, 68, 68, 0.44);
+  background: rgba(127, 29, 29, 0.56);
+}
+
+.note-content-view {
+  min-height: 280px;
+  border-top: 1px solid rgba(184, 196, 224, 0.18);
+  padding-top: 22px;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.note-editor {
+  display: grid;
+  gap: 18px;
+}
+
+.note-editor label {
+  display: grid;
+  gap: 8px;
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.note-editor input,
+.note-editor textarea {
+  width: 100%;
+  border: 1px solid rgba(184, 196, 224, 0.26);
+  border-radius: 10px;
+  outline: 0;
+  background: var(--card-bg);
+  padding: 12px 14px;
+  color: var(--text);
+  font: inherit;
+}
+
+.note-editor input:focus,
+.note-editor textarea:focus {
+  border-color: rgba(245, 179, 1, 0.68);
+}
+
+.note-editor textarea {
+  min-height: 420px;
+  line-height: 1.65;
+  resize: vertical;
+}
+
+.note-editor .notes-primary-action {
+  width: fit-content;
+}
+
 .summary-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, auto);
@@ -5868,6 +6031,27 @@ button {
   .quiz-header,
   .quiz-empty-card,
   .quiz-question-card {
+    padding: 18px;
+  }
+
+  .notes-header,
+  .note-workspace-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notes-primary-action,
+  .note-workspace-heading button {
+    width: 100%;
+  }
+
+  .note-workspace-heading > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .notes-list-panel,
+  .note-workspace {
     padding: 18px;
   }
 
