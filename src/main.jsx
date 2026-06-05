@@ -1015,43 +1015,50 @@ const workflowSteps = [
     title: "Upload Documents",
     description: "Upload your PDFs and organize them into folders for easy access.",
     icon: Upload,
-    tone: "purple"
+    tone: "purple",
+    href: "#library"
   },
   {
     title: "Generate AI Summary",
     description: "Get concise notes, key points, and important concepts from your documents.",
     icon: FileText,
-    tone: "green"
+    tone: "green",
+    href: "#summary"
   },
   {
     title: "Ask the AI Tutor",
     description: "Use AI Tutor to clarify doubts and understand difficult topics.",
     icon: MessageCircle,
-    tone: "blue"
+    tone: "blue",
+    href: "#summary"
   },
   {
     title: "Review Flashcards",
     description: "Reinforce your learning with AI-generated flashcards.",
     icon: BookOpen,
-    tone: "gold"
+    tone: "gold",
+    href: "#flashcards"
   },
   {
     title: "Take Quiz",
     description: "Test your understanding with AI-generated questions.",
     icon: ClipboardList,
-    tone: "pink"
+    tone: "pink",
+    href: "#quizzes"
   },
   {
     title: "Review Weak Topics",
     description: "Identify your weak areas and revisit the concepts that need improvement.",
     icon: Target,
-    tone: "orange"
+    tone: "orange",
+    href: "#review"
   },
   {
     title: "Track Progress",
     description: "Monitor your learning activity and performance from the Dashboard and Analytics sections.",
     icon: LineChart,
-    tone: "teal"
+    tone: "teal",
+    href: "#dashboard"
   }
 ];
 
@@ -1079,7 +1086,12 @@ function HowItWorksPage() {
           const stepNumber = String(index + 1).padStart(2, "0");
 
           return (
-            <article className={`how-step-card ${step.tone}`} key={step.title}>
+            <a
+              aria-label={`${step.title}: ${step.description}`}
+              className={`how-step-card ${step.tone}`}
+              href={step.href}
+              key={step.title}
+            >
               <div className="how-icon-square">
                 <Icon size={28} />
               </div>
@@ -1089,7 +1101,7 @@ function HowItWorksPage() {
                 <p>{step.description}</p>
               </div>
               <strong aria-hidden="true">{stepNumber}</strong>
-            </article>
+            </a>
           );
         })}
       </section>
