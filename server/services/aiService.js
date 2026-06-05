@@ -186,6 +186,9 @@ Requirements:
 * The first heading must be exactly "Overview" for short, medium, and detailed summaries.
 * The Overview paragraph must explain what the document's main subject is, its basic purpose, and the main scope covered by the document.
 * The Overview must be a genuine document overview, not content copied from the first narrow subtopic.
+* Every section after Overview must add distinct information. Do not restate or lightly rephrase the Overview.
+* Do not create both an Overview and a generic subject-named section that cover the same material.
+* Before returning the JSON, merge or remove sections whose meaning substantially overlaps another section.
 * Do not start directly with a subtopic such as keys, normalization, architecture, service models, or levels.
 * The short summary is for concise revision. Use 3 to 5 meaningful sections.
 * Each short section must contain one concise but complete paragraph. Do not use bullets, numbered lists, fragments, or detailed explanations.

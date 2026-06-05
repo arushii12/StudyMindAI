@@ -480,7 +480,62 @@ function validateImportantQuestions(questions) {
 }
 
 function cleanSummaryOutput(text) {
-  return sanitizeAiText(text);
+  return removeRepeatedSummarySections(sanitizeAiText(text));
+}
+
+function removeRepeatedSummarySections(text) {
+  const sections = String(text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (sections.length < 2 || sections.some((section) => !section.includes(":"))) {
+    return String(text || "").trim();
+  }
+
+  const kept = [];
+  const fingerprints = [];
+
+  sections.forEach((section) => {
+    const separatorIndex = section.indexOf(":");
+    const heading = section.slice(0, separatorIndex).trim();
+    const content = section.slice(separatorIndex + 1).trim();
+    const fingerprint = buildSummaryFingerprint(content);
+    const repeatsExisting = fingerprints.some((existing) => summaryOverlap(existing, fingerprint) >= 0.72);
+
+    if (!repeatsExisting && heading && content) {
+      kept.push(`${heading}: ${content}`);
+      fingerprints.push(fingerprint);
+    }
+  });
+
+  return kept.length ? kept.join("\n") : String(text || "").trim();
+}
+
+function buildSummaryFingerprint(text) {
+  const ignoredWords = new Set([
+    "about", "after", "also", "among", "and", "are", "been", "being", "between",
+    "can", "document", "for", "from", "has", "have", "into", "its", "main",
+    "more", "most", "that", "the", "their", "these", "this", "through", "uses",
+    "using", "was", "were", "which", "with"
+  ]);
+
+  return new Set(
+    String(text || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((word) => word.length > 2 && !ignoredWords.has(word))
+  );
+}
+
+function summaryOverlap(first, second) {
+  if (!first.size || !second.size) {
+    return 0;
+  }
+
+  const sharedWords = [...first].filter((word) => second.has(word)).length;
+  return sharedWords / Math.min(first.size, second.size);
 }
 
 function countWords(text) {

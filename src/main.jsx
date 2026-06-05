@@ -62,7 +62,7 @@ const statConfig = [
   { key: "documentsUploaded", label: "PDFs in Library", icon: LibraryBig },
   { key: "quizAttempts", label: "Quiz Attempts", icon: Target },
   { key: "averageScore", label: "Average Score", icon: ChartNoAxesCombined, suffix: "%" },
-  { key: "studyStreak", label: "Study Streak", icon: Flame, suffix: " Days" }
+  { key: "studyStreak", label: "Study Streak", icon: Flame }
 ];
 
 const insightIcons = {
@@ -731,6 +731,7 @@ function LoginForm({ onAuthenticated, onCreateAccount }) {
       {message && <div className="auth-message error">{message}</div>}
 
       <AuthField
+        autoComplete="email"
         error={errors.email}
         label="Email Address"
         name="email"
@@ -739,6 +740,7 @@ function LoginForm({ onAuthenticated, onCreateAccount }) {
         value={form.email}
       />
       <AuthField
+        autoComplete="current-password"
         error={errors.password}
         label="Password"
         name="password"
@@ -833,6 +835,7 @@ function SignupForm({ onAuthenticated, onLogin }) {
       {message && <div className="auth-message error">{message}</div>}
 
       <AuthField
+        autoComplete="name"
         error={errors.name}
         label="Full Name"
         name="name"
@@ -840,6 +843,7 @@ function SignupForm({ onAuthenticated, onLogin }) {
         value={form.name}
       />
       <AuthField
+        autoComplete="email"
         error={errors.email}
         label="Email Address"
         name="email"
@@ -848,6 +852,7 @@ function SignupForm({ onAuthenticated, onLogin }) {
         value={form.email}
       />
       <AuthField
+        autoComplete="new-password"
         error={errors.password}
         label="Password"
         name="password"
@@ -856,6 +861,7 @@ function SignupForm({ onAuthenticated, onLogin }) {
         value={form.password}
       />
       <AuthField
+        autoComplete="new-password"
         error={errors.confirmPassword}
         label="Confirm Password"
         name="confirmPassword"
@@ -879,12 +885,13 @@ function SignupForm({ onAuthenticated, onLogin }) {
   );
 }
 
-function AuthField({ error, label, name, onChange, type = "text", value }) {
+function AuthField({ autoComplete, error, label, name, onChange, type = "text", value }) {
   return (
     <label className="auth-field">
       <span>{label}</span>
       <input
         aria-invalid={Boolean(error)}
+        autoComplete={autoComplete}
         name={name}
         type={type}
         value={value}
@@ -1292,16 +1299,16 @@ function ProfileActionModal({ action, user, onClose, onUpdated }) {
         </div>
         {message && <div className="auth-message error">{message}</div>}
         {action === "name" && (
-          <AuthField error={errors.name} label="Name" name="name" value={form.name} onChange={setForm} />
+          <AuthField autoComplete="name" error={errors.name} label="Name" name="name" value={form.name} onChange={setForm} />
         )}
         {action === "email" && (
-          <AuthField error={errors.email} label="Email" name="email" type="email" value={form.email} onChange={setForm} />
+          <AuthField autoComplete="email" error={errors.email} label="Email" name="email" type="email" value={form.email} onChange={setForm} />
         )}
         {action === "password" && (
           <>
-            <AuthField error={errors.currentPassword} label="Current Password" name="currentPassword" type="password" value={form.currentPassword} onChange={setForm} />
-            <AuthField error={errors.password} label="New Password" name="password" type="password" value={form.password} onChange={setForm} />
-            <AuthField error={errors.confirmPassword} label="Confirm New Password" name="confirmPassword" type="password" value={form.confirmPassword} onChange={setForm} />
+            <AuthField autoComplete="current-password" error={errors.currentPassword} label="Current Password" name="currentPassword" type="password" value={form.currentPassword} onChange={setForm} />
+            <AuthField autoComplete="new-password" error={errors.password} label="New Password" name="password" type="password" value={form.password} onChange={setForm} />
+            <AuthField autoComplete="new-password" error={errors.confirmPassword} label="Confirm New Password" name="confirmPassword" type="password" value={form.confirmPassword} onChange={setForm} />
           </>
         )}
         <div className="profile-modal-actions">
@@ -2002,11 +2009,21 @@ function FolderGrid({ folders, onDelete, onOpen, onRename, reviewFolderCards, st
               <MoreVertical size={18} />
             </summary>
             <div>
-              <button type="button" onClick={() => onRename(folder)}>
+              <button
+                aria-label={`Rename ${folder.name} folder`}
+                title="Rename folder"
+                type="button"
+                onClick={() => onRename(folder)}
+              >
                 <Pencil size={15} />
                 <span>Rename Folder</span>
               </button>
-              <button type="button" onClick={() => onDelete(folder)}>
+              <button
+                aria-label={`Delete ${folder.name} folder`}
+                title="Delete folder"
+                type="button"
+                onClick={() => onDelete(folder)}
+              >
                 <Trash2 size={15} />
                 <span>Delete Folder</span>
               </button>
@@ -2152,11 +2169,21 @@ function FolderDetailView({
         </div>
         <div className="folder-detail-actions">
           <ReviewContentLink folder={folder} reviewInfo={reviewInfo} />
-          <button type="button" onClick={() => onRename(folder)}>
+          <button
+            aria-label={`Rename ${folder.name} folder`}
+            title="Rename folder"
+            type="button"
+            onClick={() => onRename(folder)}
+          >
             <Pencil size={16} />
             <span>Rename</span>
           </button>
-          <button type="button" onClick={() => onDelete(folder)}>
+          <button
+            aria-label={`Delete ${folder.name} folder`}
+            title="Delete folder"
+            type="button"
+            onClick={() => onDelete(folder)}
+          >
             <Trash2 size={16} />
             <span>Delete</span>
           </button>
@@ -2920,6 +2947,13 @@ function SummaryPage() {
         });
         const data = await response.json().catch(() => ({}));
 
+        if (response.status === 404 && !documentId) {
+          setSummaryData(null);
+          setError("");
+          setStatus("empty");
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(data.message || `Summary request failed with ${response.status}`);
         }
@@ -3346,6 +3380,21 @@ function SummaryPage() {
     );
   }
 
+  if (status === "empty") {
+    return (
+      <section className="state-card">
+        <EmptyPanel
+          title="No study document yet."
+          text="Upload a PDF from your Library to generate a summary."
+        />
+        <a className="summary-primary-action" href="#library">
+          <LibraryBig size={17} />
+          <span>Go to Library</span>
+        </a>
+      </section>
+    );
+  }
+
   const document = summaryData.document;
   const summary = summaryData.summary;
   const questions = summaryData.questions || [];
@@ -3360,7 +3409,9 @@ function SummaryPage() {
           <h1>AI Summary</h1>
           <div className="summary-meta">
             <span>{formatFileType(document.fileType)} Document</span>
-            <span>{document.pageCount || 23} Pages</span>
+            <span>
+              {document.pageCount || 23} {(document.pageCount || 23) === 1 ? "Page" : "Pages"}
+            </span>
             <span>Uploaded on {uploadedDate}</span>
           </div>
           <div className="summary-status-row">
@@ -4069,6 +4120,13 @@ function QuizPage() {
 
   async function handleSubmitAttempt() {
     if (!quizData?.quiz) {
+      return;
+    }
+
+    const hasAnsweredQuestion = quizData.quiz.questions.some((_, index) => Number.isInteger(answers[index]));
+
+    if (!hasAnsweredQuestion) {
+      setError("Please answer at least one question before submitting.");
       return;
     }
 
@@ -5211,7 +5269,9 @@ function DashboardContent({ dashboard, liveStudySeconds = 0 }) {
             label={stat.label}
             trend={dashboard.stats.trends?.[stat.key]}
             value={dashboard.stats[stat.key]}
-            suffix={stat.suffix}
+            suffix={stat.key === "studyStreak"
+              ? Number(dashboard.stats[stat.key]) === 1 ? " Day" : " Days"
+              : stat.suffix}
           />
         ))}
       </section>
@@ -5737,7 +5797,7 @@ function calculateProgressMetrics(data) {
 }
 
 function formatHours(value) {
-  return Number(value || 0).toFixed(1).replace(/\.0$/, "");
+  return Number(value || 0).toFixed(1);
 }
 
 function InsightsCard({ insights }) {

@@ -127,6 +127,17 @@ export async function submitQuizAttemptForUser(user, quizId, payload = {}) {
     throw error;
   }
 
+  const hasAnsweredQuestion = answers.some((answer) => {
+    const selectedAnswer = Number(answer);
+    return Number.isInteger(selectedAnswer) && selectedAnswer >= 0 && selectedAnswer < 4;
+  });
+
+  if (!hasAnsweredQuestion) {
+    const error = new Error("Please answer at least one question before submitting.");
+    error.status = 400;
+    throw error;
+  }
+
   const score = quiz.questions.reduce((total, question, index) => {
     return total + (Number(answers[index]) === question.correctAnswer ? 1 : 0);
   }, 0);

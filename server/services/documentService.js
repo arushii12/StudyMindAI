@@ -42,49 +42,79 @@ export async function uploadDocumentForUser(user, file, payload = {}) {
     throw error;
   }
 
-  const folder = await resolveFolderForUpload(user, payload);
-  const title = cleanTitle(payload.title || path.basename(file.originalname, path.extname(file.originalname)));
-  const subject = folder?.name || cleanTitle(payload.subject || inferSubject(title));
+  let document;
 
-  const document = await Document.create({
-    userId: user.id,
-    title,
-    displayName: title,
-    originalFileName: file.originalname,
-    storedFileName: file.filename,
-    subject,
-    folderId: folder?._id || null,
-    folderName: folder?.name || "",
-    fileType: "pdf",
-    status: "ready",
-    summaryGenerated: false,
-    extractedText: extracted.text,
-    pageCount: extracted.pageCount,
-    fileSize: file.size,
-    filePath: file.path,
-    uploadDate: new Date()
-  });
+  try {
+    const folder = await resolveFolderForUpload(user, payload);
+    const folderId = folder?._id || null;
+    const duplicate = await findDuplicateUpload(user.id, folderId, file);
 
-  console.debug("[PDF Upload]", {
-    documentId: document._id.toString(),
-    originalFileName: document.originalFileName,
-    storedFileName: document.storedFileName,
-    filePath: document.filePath,
-    pdfUrl: buildPdfUrl(document._id),
-    fileUrl: buildStaticFileUrl(document.storedFileName)
-  });
+    if (duplicate) {
+      const error = new Error("This PDF already exists in the selected folder.");
+      error.status = 409;
+      throw error;
+    }
 
-  const summary = await generateSummaryForUser(user, {
-    documentId: document._id.toString(),
-    length: payload.length || "short",
-    markStudied: false
-  });
+    const title = cleanTitle(payload.title || path.basename(file.originalname, path.extname(file.originalname)));
+    const subject = folder?.name || cleanTitle(payload.subject || inferSubject(title));
 
-  return {
-    document: mapDocument(document),
-    summary,
-    message: "PDF uploaded, text extracted, and summary generated."
-  };
+    document = await Document.create({
+      userId: user.id,
+      title,
+      displayName: title,
+      originalFileName: file.originalname,
+      storedFileName: file.filename,
+      subject,
+      folderId,
+      folderName: folder?.name || "",
+      fileType: "pdf",
+      status: "ready",
+      summaryGenerated: false,
+      extractedText: extracted.text,
+      pageCount: extracted.pageCount,
+      fileSize: file.size,
+      filePath: file.path,
+      uploadDate: new Date()
+    });
+
+    console.debug("[PDF Upload]", {
+      documentId: document._id.toString(),
+      originalFileName: document.originalFileName,
+      storedFileName: document.storedFileName,
+      filePath: document.filePath,
+      pdfUrl: buildPdfUrl(document._id),
+      fileUrl: buildStaticFileUrl(document.storedFileName)
+    });
+
+    const summary = await generateSummaryForUser(user, {
+      documentId: document._id.toString(),
+      length: payload.length || "short",
+      markStudied: false
+    });
+
+    return {
+      document: mapDocument(document),
+      summary,
+      message: "PDF uploaded, text extracted, and summary generated."
+    };
+  } catch (error) {
+    if (document?._id) {
+      try {
+        await deleteDocumentLinkedData(user.id, [document._id]);
+      } catch (cleanupError) {
+        console.error("[PDF Upload Cleanup]", cleanupError);
+      }
+
+      try {
+        await Document.deleteOne({ _id: document._id, userId: user.id });
+      } catch (cleanupError) {
+        console.error("[PDF Upload Record Cleanup]", cleanupError);
+      }
+    }
+
+    await removeFile(file.path);
+    throw error;
+  }
 }
 
 export async function listDocumentsForUser(user, filters = {}) {
@@ -340,6 +370,24 @@ async function removeFile(filePath) {
   } catch {
     // Ignore cleanup failures; the upload request should report the original error.
   }
+}
+
+async function findDuplicateUpload(userId, folderId, file) {
+  const candidates = await Document.find({
+    userId,
+    folderId,
+    fileSize: Number(file.size || 0),
+    status: { $ne: "archived" }
+  })
+    .select("originalFileName")
+    .lean();
+  const uploadedName = normalizeFileName(file.originalname);
+
+  return candidates.find((candidate) => normalizeFileName(candidate.originalFileName) === uploadedName) || null;
+}
+
+function normalizeFileName(fileName) {
+  return String(fileName || "").trim().toLocaleLowerCase();
 }
 
 async function deleteDocumentLinkedData(userId, documentIds) {
