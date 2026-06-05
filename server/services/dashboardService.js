@@ -1,5 +1,3 @@
-import fs from "fs";
-import path from "path";
 import Document from "../models/Document.js";
 import QuizAttempt from "../models/QuizAttempt.js";
 import Flashcard from "../models/Flashcard.js";
@@ -11,7 +9,6 @@ import { isDatabaseConnected } from "../config/db.js";
 import mongoose from "mongoose";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const UPLOADS_DIR = path.resolve(process.cwd(), "server/uploads");
 
 export async function updateDailyGoalForUser(user, payload = {}) {
   if (!user?.id || !isDatabaseConnected()) {
@@ -380,27 +377,11 @@ function userObjectId(id) {
 }
 
 async function countStoredPdfDocuments(userId) {
-  const documents = await Document.find({
+  return Document.countDocuments({
     userId,
     fileType: "pdf",
     status: { $ne: "archived" }
-  })
-    .select("filePath storedFileName")
-    .lean();
-
-  return documents.filter(hasStoredPdfFile).length;
-}
-
-function hasStoredPdfFile(document) {
-  if (document.filePath && fs.existsSync(document.filePath)) {
-    return true;
-  }
-
-  if (document.storedFileName) {
-    return fs.existsSync(path.join(UPLOADS_DIR, document.storedFileName));
-  }
-
-  return false;
+  });
 }
 
 function clampNumber(value, min, max, fallback) {
