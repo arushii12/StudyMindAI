@@ -4,6 +4,7 @@ import { jsPDF } from "jspdf";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
+  ArrowLeft,
   BookOpen,
   Bookmark,
   Brain,
@@ -53,6 +54,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const navigationItems = [
   { label: "Dashboard", icon: LayoutDashboard, page: "dashboard", href: "#dashboard" },
   { label: "Library", icon: LibraryBig, page: "library", href: "#library" },
+  { label: "Upload as Text", icon: ClipboardList, page: "upload-text", href: "#upload-text" },
   { label: "Summary", icon: FileText, page: "summary", href: "#summary" },
   { label: "Flashcards", icon: BookOpen, page: "flashcards", href: "#flashcards" },
   { label: "Quizzes", icon: Brain, page: "quizzes", href: "#quizzes" },
@@ -77,6 +79,7 @@ const insightIcons = {
 };
 
 const TOAST_DISMISS_MS = 5000;
+const ACTIVE_TEXT_MATERIAL_KEY = "studymind:active-text-material";
 const QUIZ_INSIGHT_FALLBACK = "We couldn't generate an AI insight for this attempt. Review the incorrect and unanswered questions below, then retake the quiz after revising the summary.";
 const longLoadingMessages = [
   "Analyzing content...",
@@ -351,6 +354,8 @@ function App() {
           <SummaryPage />
         ) : page === "library" ? (
           <LibraryPage />
+        ) : page === "upload-text" ? (
+          <UploadTextPage />
         ) : page === "quizzes" ? (
           <QuizPage />
         ) : page === "quiz-results" ? (
@@ -404,6 +409,36 @@ function getPageFromHash() {
 function getHashParams() {
   const query = window.location.hash.split("?")[1] || "";
   return new URLSearchParams(query);
+}
+
+function getActiveTextMaterialId() {
+  try {
+    return localStorage.getItem(ACTIVE_TEXT_MATERIAL_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function setActiveTextMaterialId(documentId) {
+  try {
+    if (documentId) {
+      localStorage.setItem(ACTIVE_TEXT_MATERIAL_KEY, documentId);
+    } else {
+      localStorage.removeItem(ACTIVE_TEXT_MATERIAL_KEY);
+    }
+    window.dispatchEvent(new Event("studymind:active-material-change"));
+  } catch {
+    // Explicit document links continue to work if browser storage is unavailable.
+  }
+}
+
+function getNavigationHref(item) {
+  if (!["summary", "quizzes", "flashcards"].includes(item.page)) {
+    return item.href;
+  }
+
+  const documentId = getActiveTextMaterialId();
+  return documentId ? `${item.href}?documentId=${encodeURIComponent(documentId)}` : item.href;
 }
 
 function isValidEmail(email) {
@@ -581,7 +616,17 @@ function useAutoDismissStatus(state, setState, duration = TOAST_DISMISS_MS) {
 
 function Sidebar({ user, activePage, collapsed, onLogout, onToggle }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [, setActiveMaterialVersion] = useState(0);
   const initials = getUserInitials(user);
+
+  useEffect(() => {
+    const handleActiveMaterialChange = () => {
+      setActiveMaterialVersion((version) => version + 1);
+    };
+
+    window.addEventListener("studymind:active-material-change", handleActiveMaterialChange);
+    return () => window.removeEventListener("studymind:active-material-change", handleActiveMaterialChange);
+  }, []);
 
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
@@ -607,7 +652,7 @@ function Sidebar({ user, activePage, collapsed, onLogout, onToggle }) {
             <a
               className={`nav-item ${item.page === activePage ? "active" : ""}`}
               data-tooltip={item.label}
-              href={item.href}
+              href={getNavigationHref(item)}
               key={item.label}
             >
               <Icon size={20} />
@@ -1341,6 +1386,250 @@ function ProfileActionModal({ action, user, onClose, onUpdated }) {
           </LoadingButton>
         </div>
       </form>
+    </div>
+  );
+}
+
+function UploadTextPage() {
+  const [title, setTitle] = useState("");
+  const [studyText, setStudyText] = useState("");
+  const [documentId, setDocumentId] = useState(() => getActiveTextMaterialId());
+  const [activeAction, setActiveAction] = useState("");
+  const [message, setMessage] = useState({ status: "idle", message: "" });
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const maxCharacters = 20000;
+  useAutoDismissStatus(message, setMessage);
+
+  useEffect(() => {
+    if (!documentId) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+
+    async function loadTextMaterial() {
+      try {
+        const response = await fetch(`/api/text-materials/${documentId}`, {
+          signal: controller.signal
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.message || "Unable to restore pasted study material.");
+        }
+
+        setTitle(data.document?.title || "");
+        setStudyText(data.document?.text || data.document?.content || "");
+      } catch (loadError) {
+        if (loadError.name === "AbortError") {
+          return;
+        }
+
+        setDocumentId("");
+        setActiveTextMaterialId("");
+      }
+    }
+
+    loadTextMaterial();
+    return () => controller.abort();
+  }, [documentId]);
+
+  async function handleGenerate(action) {
+    if (!studyText.trim()) {
+      setMessage({ status: "error", message: "Please paste study material first." });
+      return;
+    }
+
+    if (studyText.trim().split(/\s+/).filter(Boolean).length < 80) {
+      setMessage({
+        status: "error",
+        message: "Please enter more study content to generate meaningful results."
+      });
+      return;
+    }
+
+    try {
+      setActiveAction(action);
+      setMessage({ status: "loading", message: `Generating ${action}...` });
+      const saveResponse = await fetch("/api/text-materials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          text: studyText,
+          documentId: documentId || undefined
+        })
+      });
+      const savedData = await saveResponse.json().catch(() => ({}));
+
+      if (!saveResponse.ok) {
+        throw new Error(savedData.message || "Unable to save study material.");
+      }
+
+      const savedDocumentId = savedData.document.id;
+      setDocumentId(savedDocumentId);
+      setTitle(savedData.document.title || title);
+      setActiveTextMaterialId(savedDocumentId);
+
+      const generationConfig = {
+        summary: {
+          endpoint: "/api/summaries/generate",
+          payload: { documentId: savedDocumentId, length: "short", markStudied: false }
+        },
+        quiz: {
+          endpoint: "/api/quizzes/generate",
+          payload: { documentId: savedDocumentId, questionCount: 8 }
+        },
+        flashcards: {
+          endpoint: "/api/flashcards/generate",
+          payload: { documentId: savedDocumentId, cardCount: 12 }
+        }
+      }[action];
+      const response = await fetch(generationConfig.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(generationConfig.payload)
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.message || "Unable to generate study material.");
+      }
+
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
+
+      if (action === "summary") {
+        window.location.hash = `#summary?documentId=${savedDocumentId}`;
+      } else if (action === "quiz") {
+        window.location.hash = `#quizzes?documentId=${savedDocumentId}&quizId=${result.quiz.id}`;
+      } else {
+        window.location.hash = `#flashcards?documentId=${savedDocumentId}&setId=${result.flashcardSet.id}`;
+      }
+    } catch (generationError) {
+      setMessage({
+        status: "error",
+        message: generationError.message || "Unable to generate study material."
+      });
+      setActiveAction("");
+    }
+  }
+
+  function handleClearRequest() {
+    if (!title.trim() && !studyText.trim()) {
+      return;
+    }
+
+    setClearConfirmOpen(true);
+  }
+
+  function handleClearForm() {
+    setTitle("");
+    setStudyText("");
+    setDocumentId("");
+    setActiveTextMaterialId("");
+    setMessage({ status: "idle", message: "" });
+    setClearConfirmOpen(false);
+  }
+
+  return (
+    <div className="upload-text-page">
+      <header className="upload-text-header">
+        <span className="summary-section-label">Text Study Material</span>
+        <h1>Upload as Text</h1>
+        <p>Paste study material and generate summaries, quizzes, and flashcards.</p>
+      </header>
+
+      <section className="upload-text-card">
+        <label className="upload-text-field">
+          <span>Title</span>
+          <input
+            maxLength={120}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="e.g., DBMS Unit 1 Notes"
+            type="text"
+            value={title}
+          />
+        </label>
+
+        <label className="upload-text-field">
+          <span>Study Text</span>
+          <textarea
+            maxLength={maxCharacters}
+            onChange={(event) => setStudyText(event.target.value)}
+            placeholder="Paste your notes, textbook content, class notes, or any study material here..."
+            value={studyText}
+          />
+          <small>{studyText.length} / {maxCharacters}</small>
+        </label>
+
+        <div className="upload-text-tip">
+          <Lightbulb size={18} />
+          <span>Tip: For best results, include definitions, examples, formulas, and key points.</span>
+        </div>
+
+        {message.status === "loading" && (
+          <LoadingBanner
+            title={`Generating ${activeAction}`}
+            detail="Using your pasted study material to prepare the result."
+            compact
+          />
+        )}
+        {message.status === "error" && (
+          <div className="summary-export-status error">{message.message}</div>
+        )}
+
+        <div className="upload-text-actions">
+          <LoadingButton
+            disabled={Boolean(activeAction)}
+            isLoading={activeAction === "summary"}
+            loadingLabel="Generating Summary"
+            onClick={() => handleGenerate("summary")}
+            type="button"
+          >
+            <FileText size={18} />
+            <span>Generate Summary</span>
+          </LoadingButton>
+          <LoadingButton
+            disabled={Boolean(activeAction)}
+            isLoading={activeAction === "quiz"}
+            loadingLabel="Generating Quiz"
+            onClick={() => handleGenerate("quiz")}
+            type="button"
+          >
+            <Brain size={18} />
+            <span>Generate Quiz</span>
+          </LoadingButton>
+          <LoadingButton
+            disabled={Boolean(activeAction)}
+            isLoading={activeAction === "flashcards"}
+            loadingLabel="Generating Flashcards"
+            onClick={() => handleGenerate("flashcards")}
+            type="button"
+          >
+            <BookOpen size={18} />
+            <span>Generate Flashcards</span>
+          </LoadingButton>
+          <button
+            className="upload-text-clear"
+            disabled={Boolean(activeAction)}
+            onClick={handleClearRequest}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
+      </section>
+
+      {clearConfirmOpen && (
+        <ConfirmationModal
+          title="Clear Form?"
+          message="Clear the current title and study text?"
+          confirmLabel="Clear"
+          confirmClassName="clear"
+          onCancel={() => setClearConfirmOpen(false)}
+          onConfirm={handleClearForm}
+        />
+      )}
     </div>
   );
 }
@@ -3100,6 +3389,7 @@ function NotesPage() {
           {mode === "view" ? (
             <>
               <button className="note-back-button" type="button" onClick={returnToList}>
+                <ArrowLeft size={17} />
                 Back to Notes
               </button>
               <div className="note-workspace-heading">
@@ -3276,6 +3566,16 @@ function SummaryPage() {
     setChatStatus("idle");
     setChatError("");
   }, [documentId]);
+
+  useEffect(() => {
+    if (!summaryData?.document?.id) {
+      return;
+    }
+
+    setActiveTextMaterialId(
+      summaryData.document.fileType === "text" ? summaryData.document.id : ""
+    );
+  }, [summaryData?.document?.id, summaryData?.document?.fileType]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -3493,6 +3793,10 @@ function SummaryPage() {
   }
 
   async function handleSaveSummaryForReview() {
+    if (summaryData?.document?.fileType === "text") {
+      return;
+    }
+
     if (!summaryData?.document?.id || !summaryData?.summary) {
       setSaveSummaryState({ status: "error", message: "Generate a summary before saving it." });
       return;
@@ -3722,13 +4026,17 @@ function SummaryPage() {
     <div className="summary-page">
       <header className="summary-header">
         <div className="summary-header-main">
-          <span className="summary-breadcrumb">Library &gt; {document.title}</span>
+          <span className="summary-breadcrumb">
+            {document.fileType === "text" ? "Upload as Text" : "Library"} &gt; {document.title}
+          </span>
           <h1>AI Summary</h1>
           <div className="summary-meta">
-            <span>{formatFileType(document.fileType)} Document</span>
-            <span>
-              {document.pageCount || 23} {(document.pageCount || 23) === 1 ? "Page" : "Pages"}
-            </span>
+            <span>{document.fileType === "text" ? "Pasted Text" : `${formatFileType(document.fileType)} Document`}</span>
+            {document.fileType !== "text" && (
+              <span>
+                {document.pageCount || 23} {(document.pageCount || 23) === 1 ? "Page" : "Pages"}
+              </span>
+            )}
             <span>Uploaded on {uploadedDate}</span>
           </div>
           <div className="summary-status-row">
@@ -3770,15 +4078,22 @@ function SummaryPage() {
           </div>
           <div className="summary-header-action-row">
             <LoadingButton
-              className="summary-primary-action secondary"
+              className={`summary-primary-action secondary${document.fileType === "text" ? " text-revision-disabled" : ""}`}
               isLoading={saveSummaryState.status === "loading"}
               loadingLabel={savedSummary ? "Removing" : "Saving"}
               onClick={handleSaveSummaryForReview}
-              disabled={!summary || saveSummaryState.status === "loading"}
+              disabled={document.fileType === "text" || !summary || saveSummaryState.status === "loading"}
+              title={document.fileType === "text"
+                ? "Mark for Revision is available for uploaded PDFs only."
+                : undefined}
               type="button"
             >
               <Bookmark size={19} />
-              <span>{savedSummary ? "Saved" : "Save for Revision"}</span>
+              <span>
+                {document.fileType === "text"
+                  ? "Upload PDF to Mark"
+                  : savedSummary ? "Saved" : "Save for Revision"}
+              </span>
             </LoadingButton>
             <div className="summary-pdf-menu" ref={pdfMenuRef}>
               <button
@@ -4025,7 +4340,7 @@ function SummaryPage() {
       {deleteConfirmOpen && (
         <ConfirmationModal
           title="Delete Summary?"
-          message="This will permanently remove the generated summary. The original PDF will remain unchanged."
+          message={`This will permanently remove the generated summary. The original ${document.fileType === "text" ? "pasted text material" : "PDF"} will remain unchanged.`}
           confirmLabel="Delete"
           isConfirming={deleteState.status === "loading"}
           onCancel={() => setDeleteConfirmOpen(false)}
@@ -4052,6 +4367,7 @@ function SummarySections({ text, length }) {
 }
 
 function ConfirmationModal({
+  confirmClassName = "danger",
   confirmLabel = "Delete",
   isConfirming = false,
   message,
@@ -4074,7 +4390,9 @@ function ConfirmationModal({
     <div className="confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
       <section className="confirmation-modal">
         <div>
-          <span className="summary-section-label">Confirm Delete</span>
+          <span className="summary-section-label">
+            {confirmLabel === "Delete" ? "Confirm Delete" : "Confirmation"}
+          </span>
           <h2 id="confirmation-title">{title}</h2>
           <p>{message}</p>
         </div>
@@ -4083,7 +4401,7 @@ function ConfirmationModal({
             Cancel
           </button>
           <LoadingButton
-            className="danger"
+            className={confirmClassName}
             isLoading={isConfirming}
             loadingLabel={confirmLabel === "Delete" ? "Deleting" : "Please wait"}
             onClick={onConfirm}
@@ -4309,6 +4627,16 @@ function QuizPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [retakeConfirmOpen, setRetakeConfirmOpen] = useState(false);
   useAutoDismissStatus(deleteState, setDeleteState);
+
+  useEffect(() => {
+    if (!quizData?.document?.id) {
+      return;
+    }
+
+    setActiveTextMaterialId(
+      quizData.document.fileType === "text" ? quizData.document.id : ""
+    );
+  }, [quizData?.document?.id, quizData?.document?.fileType]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -4695,7 +5023,7 @@ function QuizPage() {
           <section className="quiz-meta-card">
             <div>
               <span>Source</span>
-              <strong>{capitalize(quiz.source || "summary")}</strong>
+              <strong>{quizData.document.fileType === "text" ? "Pasted Text" : capitalize(quiz.source || "summary")}</strong>
             </div>
             <div>
               <span>Questions</span>
@@ -4801,7 +5129,7 @@ function QuizPage() {
       {deleteConfirmOpen && (
         <ConfirmationModal
           title="Delete Quiz?"
-          message="This will permanently remove this quiz and its results. The original PDF, summary, and flashcards will remain unchanged."
+          message={`This will permanently remove this quiz and its results. The original ${quizData?.document?.fileType === "text" ? "pasted text material" : "PDF"}, summary, and flashcards will remain unchanged.`}
           confirmLabel="Delete"
           isConfirming={deleteState.status === "loading"}
           onCancel={() => setDeleteConfirmOpen(false)}
@@ -5097,6 +5425,16 @@ function FlashcardsPage() {
   });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   useAutoDismissStatus(deleteState, setDeleteState);
+
+  useEffect(() => {
+    if (!deckData?.document?.id) {
+      return;
+    }
+
+    setActiveTextMaterialId(
+      deckData.document.fileType === "text" ? deckData.document.id : ""
+    );
+  }, [deckData?.document?.id, deckData?.document?.fileType]);
 
   useEffect(() => {
     if (savingState !== "saved") {
@@ -5464,7 +5802,7 @@ function FlashcardsPage() {
       {deleteConfirmOpen && (
         <ConfirmationModal
           title="Delete Flashcards?"
-          message="This will permanently remove the generated flashcards. The original PDF and summary will remain unchanged."
+          message={`This will permanently remove the generated flashcards. The original ${deckData?.document?.fileType === "text" ? "pasted text material" : "PDF"} and summary will remain unchanged.`}
           confirmLabel="Delete"
           isConfirming={deleteState.status === "loading"}
           onCancel={() => setDeleteConfirmOpen(false)}
@@ -5739,6 +6077,7 @@ function DailyGoalWidget({ goal, liveStudySeconds }) {
         {goalComplete && <small>Goal Completed 🎉</small>}
         {saveStatus === "saving" && (
           <LoadingBanner
+            className="goal-saving-banner"
             compact
             title="Saving goal"
             detail="Updating today's target."

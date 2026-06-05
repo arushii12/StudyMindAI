@@ -200,6 +200,34 @@ button {
   padding: 9px 12px;
 }
 
+.loading-banner.goal-saving-banner {
+  width: fit-content;
+  min-height: 30px;
+  gap: 7px;
+  border-radius: 10px;
+  padding: 3px 9px;
+}
+
+.loading-banner.goal-saving-banner .loading-spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+.loading-banner.goal-saving-banner > div {
+  display: flex;
+  align-items: center;
+}
+
+.loading-banner.goal-saving-banner strong {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.loading-banner.goal-saving-banner > div > span {
+  display: none;
+}
+
 .loading-banner > div {
   display: grid;
   min-width: 0;
@@ -2233,6 +2261,177 @@ button {
   line-height: 1.05;
 }
 
+.upload-text-page {
+  display: grid;
+  max-width: 1120px;
+  gap: 20px;
+}
+
+.upload-text-header {
+  border: 1px solid rgba(245, 179, 1, 0.42);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(10, 45, 122, 0.94), rgba(6, 27, 79, 0.9));
+  padding: 24px;
+}
+
+.upload-text-header h1 {
+  margin: 7px 0 8px;
+  color: var(--warm-heading);
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 1.05;
+}
+
+.upload-text-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.upload-text-card {
+  display: grid;
+  gap: 20px;
+  border: 1px solid rgba(184, 196, 224, 0.2);
+  border-radius: 16px;
+  background: var(--secondary-bg);
+  padding: 24px;
+}
+
+.upload-text-field {
+  display: grid;
+  gap: 8px;
+}
+
+.upload-text-field > span {
+  color: var(--gold);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.upload-text-field input,
+.upload-text-field textarea {
+  width: 100%;
+  border: 1px solid rgba(184, 196, 224, 0.26);
+  border-radius: 11px;
+  outline: 0;
+  background: var(--card-bg);
+  padding: 13px 14px;
+  color: var(--text);
+  font: inherit;
+}
+
+.upload-text-field input {
+  min-height: 48px;
+}
+
+.upload-text-field textarea {
+  min-height: 390px;
+  line-height: 1.65;
+  resize: vertical;
+  scrollbar-color: rgba(59, 130, 246, 0.86) rgba(2, 11, 45, 0.72);
+  scrollbar-width: thin;
+}
+
+.upload-text-field textarea::-webkit-scrollbar {
+  width: 7px;
+}
+
+.upload-text-field textarea::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(2, 11, 45, 0.72);
+}
+
+.upload-text-field textarea::-webkit-scrollbar-thumb {
+  border: 1px solid rgba(6, 27, 79, 0.86);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.9), rgba(10, 45, 122, 0.96));
+  background-clip: padding-box;
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.upload-text-field textarea::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 1), rgba(20, 70, 180, 0.98));
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.24);
+}
+
+.upload-text-field textarea::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 1), rgba(10, 45, 122, 1));
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.34);
+}
+
+.upload-text-field input:focus,
+.upload-text-field textarea:focus {
+  border-color: rgba(245, 179, 1, 0.72);
+  box-shadow: 0 0 0 3px rgba(245, 179, 1, 0.1);
+}
+
+.upload-text-field small {
+  justify-self: end;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.upload-text-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(245, 179, 1, 0.28);
+  border-radius: 11px;
+  background: rgba(245, 179, 1, 0.08);
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.upload-text-tip svg {
+  flex: 0 0 auto;
+  color: var(--gold);
+}
+
+.upload-text-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.upload-text-actions button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(245, 179, 1, 0.48);
+  border-radius: 11px;
+  background: var(--accent);
+  padding: 0 15px;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.upload-text-actions button:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.upload-text-actions .upload-text-clear {
+  min-height: 40px;
+  align-self: center;
+  border-color: rgba(184, 196, 224, 0.3);
+  background: rgba(8, 32, 86, 0.48);
+  padding: 0 13px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.upload-text-actions .upload-text-clear:hover:not(:disabled) {
+  border-color: rgba(245, 179, 1, 0.4);
+  background: rgba(14, 48, 112, 0.68);
+  color: var(--text);
+}
+
 .library-header p {
   margin: 0;
   color: var(--muted);
@@ -3651,6 +3850,14 @@ button {
   opacity: 0.72;
 }
 
+.summary-primary-action.text-revision-disabled:disabled {
+  border-color: rgba(184, 196, 224, 0.18);
+  background: rgba(8, 32, 86, 0.56);
+  color: rgba(184, 196, 224, 0.68);
+  opacity: 0.62;
+  filter: saturate(0.45);
+}
+
 .summary-icon-button {
   position: relative;
   width: 40px;
@@ -3867,6 +4074,12 @@ button {
   border-color: rgba(239, 68, 68, 0.46);
   background: #ef4444;
   color: #ffffff;
+}
+
+.confirmation-actions button.clear {
+  border-color: rgba(245, 179, 1, 0.48);
+  background: var(--accent);
+  color: var(--text);
 }
 
 .confirmation-actions button:disabled {
@@ -6130,6 +6343,24 @@ button {
   .note-workspace-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .upload-text-header,
+  .upload-text-card {
+    padding: 18px;
+  }
+
+  .upload-text-field textarea {
+    min-height: 320px;
+  }
+
+  .upload-text-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .upload-text-actions button {
+    width: 100%;
   }
 
   .notes-primary-action,

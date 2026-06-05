@@ -281,6 +281,14 @@ async function findSelectedDocument(userId, documentId) {
 }
 
 async function getFlashcardSource(userId, document) {
+  if (document.fileType === "text" && countWords(document.extractedText) >= 80) {
+    return {
+      type: "document",
+      summaryId: null,
+      text: document.extractedText
+    };
+  }
+
   const summary = await Summary.findOne({ userId, documentId: document._id })
     .sort({ generatedAt: -1, updatedAt: -1 })
     .lean();
@@ -425,6 +433,8 @@ function mapDocument(document) {
     title: displayName,
     displayName,
     subject: document.subject,
+    fileType: document.fileType,
+    sourceType: document.sourceType || document.fileType,
     pageCount: document.pageCount || 0
   };
 }

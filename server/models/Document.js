@@ -19,12 +19,18 @@ const documentSchema = new mongoose.Schema(
     },
     originalFileName: {
       type: String,
-      required: true,
+      required() {
+        return this.fileType === "pdf";
+      },
+      default: "",
       trim: true
     },
     storedFileName: {
       type: String,
-      required: true,
+      required() {
+        return this.fileType === "pdf";
+      },
+      default: "",
       trim: true
     },
     subject: {
@@ -46,8 +52,15 @@ const documentSchema = new mongoose.Schema(
     },
     fileType: {
       type: String,
-      enum: ["pdf", "notes", "doc", "other"],
+      enum: ["pdf", "text", "notes", "doc", "other"],
       default: "other"
+    },
+    sourceType: {
+      type: String,
+      enum: ["pdf", "text"],
+      default() {
+        return this.fileType === "text" ? "text" : "pdf";
+      }
     },
     status: {
       type: String,

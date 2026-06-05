@@ -373,6 +373,7 @@ function mapDocument(document) {
     displayName,
     subject: document.subject,
     fileType: document.fileType,
+    sourceType: document.sourceType || document.fileType,
     pageCount: document.pageCount || 0,
     uploadedAt: document.createdAt || document.uploadedAt,
     updatedAt: document.updatedAt

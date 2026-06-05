@@ -13,6 +13,7 @@ import noteRoutes from "./routes/noteRoutes.js";
 import quizRoutes from "./routes/quizRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import summaryRoutes from "./routes/summaryRoutes.js";
+import textMaterialRoutes from "./routes/textMaterialRoutes.js";
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -42,6 +43,7 @@ app.use("/api/notes", noteRoutes);
 app.use("/api/quizzes", quizRoutes);
 app.use("/api/review", reviewRoutes);
 app.use("/api/summaries", summaryRoutes);
+app.use("/api/text-materials", textMaterialRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found." });
