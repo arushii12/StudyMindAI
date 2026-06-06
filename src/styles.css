@@ -380,30 +380,64 @@ button {
 
 .sidebar-toggle {
   position: absolute;
-  top: 42px;
-  right: -20px;
+  top: min(50%, 348px);
+  right: -19px;
+  z-index: 12;
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 18px;
+  height: 56px;
   place-items: center;
-  border: 1px solid rgba(245, 179, 1, 0.38);
-  border-radius: 9px;
-  background: var(--secondary-bg);
+  border: 1px solid rgba(59, 130, 246, 0.46);
+  border-left-color: rgba(184, 196, 224, 0.16);
+  border-radius: 0 999px 999px 0;
+  background:
+    linear-gradient(180deg, rgba(10, 45, 122, 0.96), rgba(6, 27, 79, 0.98)),
+    #061b4f;
   color: var(--gold);
-  font-size: 12px;
-  font-weight: 900;
   line-height: 1;
-  transition: background 180ms ease, border-color 180ms ease;
+  box-shadow:
+    6px 0 18px rgba(59, 130, 246, 0.14),
+    0 7px 16px rgba(0, 0, 0, 0.18),
+    inset 1px 0 0 rgba(255, 248, 240, 0.07);
+  transform: translateY(-50%);
+  transition:
+    right 300ms ease-in-out,
+    transform 220ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
 }
 
-.sidebar.collapsed .sidebar-toggle {
-  top: 42px;
-  right: -20px;
+.sidebar-toggle:hover,
+.sidebar-toggle:focus-visible {
+  border-color: rgba(59, 130, 246, 0.78);
+  background:
+    linear-gradient(180deg, rgba(13, 57, 148, 0.98), rgba(8, 35, 98, 0.98)),
+    #0a2d7a;
+  box-shadow:
+    7px 0 22px rgba(59, 130, 246, 0.24),
+    0 8px 20px rgba(0, 0, 0, 0.22),
+    0 0 12px rgba(59, 130, 246, 0.16),
+    inset 1px 0 0 rgba(255, 248, 240, 0.12);
+  transform: translate(1px, -50%) scale(1.02);
 }
 
-.sidebar-toggle:hover {
-  border-color: rgba(245, 179, 1, 0.72);
-  background: var(--card-bg);
+.sidebar-toggle:focus-visible {
+  outline: 2px solid rgba(245, 179, 1, 0.7);
+  outline-offset: 3px;
+}
+
+.sidebar-toggle svg {
+  width: 16px;
+  height: 16px;
+  filter: drop-shadow(0 0 6px rgba(245, 179, 1, 0.24));
+  transform: translateX(-5px);
+  transition: transform 180ms ease;
+}
+
+.sidebar-toggle:hover svg,
+.sidebar-toggle:focus-visible svg {
+  transform: translateX(-5px) scale(1.04);
 }
 
 .sidebar-nav {
@@ -786,13 +820,39 @@ button {
 
 .how-page {
   display: grid;
+  width: 100%;
   gap: 28px;
   max-width: 1180px;
+  margin-inline: auto;
+  transform: translateX(-24px);
+}
+
+.how-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  height: 46px;
+  gap: 8px;
+  border: 1px solid rgba(245, 179, 1, 0.42);
+  border-radius: 12px;
+  background: var(--secondary-bg);
+  color: var(--text);
+  padding: 0 18px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.how-back-button:hover {
+  background: #0a2d7a;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(59, 130, 246, 0.2);
 }
 
 .how-header h1 {
-  margin: 0;
-  color: var(--text);
+  margin: 18px 0 0;
+  color: var(--warm-heading);
   font-size: clamp(38px, 5vw, 58px);
   line-height: 1;
 }
@@ -849,10 +909,6 @@ button {
 .how-step-card:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--how-color) 72%, #fff);
   outline-offset: 3px;
-}
-
-.how-step-card:nth-child(7) {
-  grid-column: 1 / -1;
 }
 
 .how-step-card.purple,
@@ -963,7 +1019,7 @@ button {
 
 .how-flow-track {
   display: grid;
-  grid-template-columns: repeat(13, minmax(0, auto));
+  grid-template-columns: repeat(15, minmax(0, auto));
   align-items: start;
   gap: 10px;
   margin-top: 30px;
@@ -990,8 +1046,7 @@ button {
   background: linear-gradient(135deg, color-mix(in srgb, var(--how-color) 96%, #fff 4%), color-mix(in srgb, var(--how-color) 70%, #020b2d));
   color: #fff8f0;
   box-shadow: 0 14px 32px color-mix(in srgb, var(--how-color) 20%, transparent);
-  animation: how-flow-float 3.6s ease-in-out infinite;
-  will-change: transform;
+  transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
 .how-flow-icon::after {
@@ -999,9 +1054,9 @@ button {
   inset: -5px;
   border: 1px solid color-mix(in srgb, var(--how-color) 54%, transparent);
   border-radius: 50%;
-  opacity: 0;
   content: "";
-  animation: how-flow-ring 3.6s ease-out infinite;
+  opacity: 0;
+  transition: opacity 180ms ease;
 }
 
 .how-flow-icon svg {
@@ -1011,37 +1066,16 @@ button {
 }
 
 .how-flow-item:hover .how-flow-icon svg {
-  transform: scale(1.14) rotate(-5deg);
+  transform: scale(1.08);
 }
 
-.how-flow-item:nth-child(3) .how-flow-icon,
-.how-flow-item:nth-child(3) .how-flow-icon::after {
-  animation-delay: 180ms;
+.how-flow-item:hover .how-flow-icon {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--how-color) 26%, transparent);
 }
 
-.how-flow-item:nth-child(5) .how-flow-icon,
-.how-flow-item:nth-child(5) .how-flow-icon::after {
-  animation-delay: 360ms;
-}
-
-.how-flow-item:nth-child(7) .how-flow-icon,
-.how-flow-item:nth-child(7) .how-flow-icon::after {
-  animation-delay: 540ms;
-}
-
-.how-flow-item:nth-child(9) .how-flow-icon,
-.how-flow-item:nth-child(9) .how-flow-icon::after {
-  animation-delay: 720ms;
-}
-
-.how-flow-item:nth-child(11) .how-flow-icon,
-.how-flow-item:nth-child(11) .how-flow-icon::after {
-  animation-delay: 900ms;
-}
-
-.how-flow-item:nth-child(13) .how-flow-icon,
-.how-flow-item:nth-child(13) .how-flow-icon::after {
-  animation-delay: 1080ms;
+.how-flow-item:hover .how-flow-icon::after {
+  opacity: 0.42;
 }
 
 .how-flow-item strong {
@@ -1600,36 +1634,6 @@ button {
   scrollbar-width: thin;
   transform-origin: top center;
   animation: goal-dropdown-enter 0.2s ease-out;
-}
-
-@keyframes how-flow-float {
-  0%,
-  100% {
-    transform: translateY(0);
-    box-shadow: 0 14px 32px color-mix(in srgb, var(--how-color) 20%, transparent);
-  }
-
-  50% {
-    transform: translateY(-7px);
-    box-shadow: 0 20px 38px color-mix(in srgb, var(--how-color) 30%, transparent);
-  }
-}
-
-@keyframes how-flow-ring {
-  0%,
-  40% {
-    transform: scale(0.92);
-    opacity: 0;
-  }
-
-  58% {
-    opacity: 0.7;
-  }
-
-  100% {
-    transform: scale(1.16);
-    opacity: 0;
-  }
 }
 
 .goal-dropdown-menu::-webkit-scrollbar {
@@ -5874,10 +5878,6 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .how-step-card:nth-child(7) {
-    grid-column: auto;
-  }
-
   .how-tip-card {
     grid-template-columns: 1fr;
   }
@@ -6026,7 +6026,16 @@ button {
   .sidebar-toggle {
     position: static;
     flex: 0 0 auto;
+    width: 42px;
+    height: 44px;
     margin-left: 2px;
+    border-radius: 999px;
+    transform: none;
+  }
+
+  .sidebar-toggle:hover,
+  .sidebar-toggle:focus-visible {
+    transform: translateY(-2px);
   }
 
   .brand span,
@@ -6115,6 +6124,7 @@ button {
 
   .how-page {
     gap: 20px;
+    transform: none;
   }
 
   .how-step-card,
@@ -6526,10 +6536,5 @@ button {
 
   .loading-spinner {
     animation-duration: 1.4s;
-  }
-
-  .how-flow-icon,
-  .how-flow-icon::after {
-    animation: none;
   }
 }

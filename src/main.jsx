@@ -11,6 +11,8 @@ import {
   ChartNoAxesCombined,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Clock3,
   Copy,
@@ -22,7 +24,6 @@ import {
   LayoutDashboard,
   Layers,
   LibraryBig,
-  Laptop,
   Lightbulb,
   LineChart,
   LogOut,
@@ -60,7 +61,6 @@ const navigationItems = [
   { label: "Quizzes", icon: Brain, page: "quizzes", href: "#quizzes" },
   { label: "Review", icon: Bookmark, page: "review", href: "#review" },
   { label: "Notes", icon: NotebookPen, page: "notes", href: "#notes" },
-  { label: "How It Works", icon: Laptop, page: "how-it-works", href: "#how-it-works" },
   { label: "Profile", icon: UserCircle, page: "profile", href: "#profile" }
 ];
 
@@ -635,15 +635,15 @@ function Sidebar({ user, activePage, collapsed, onLogout, onToggle }) {
           <GraduationCap size={24} />
         </div>
         <span>StudyMind AI</span>
-        <button
-          className="sidebar-toggle"
-          type="button"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={onToggle}
-        >
-          {collapsed ? "▶" : "◀"}
-        </button>
       </div>
+      <button
+        className="sidebar-toggle"
+        type="button"
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onClick={onToggle}
+      >
+        {collapsed ? <ChevronRight size={22} /> : <ChevronLeft size={22} />}
+      </button>
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
         {navigationItems.map((item) => {
@@ -1057,8 +1057,8 @@ function Header({ user, uploadState, setUploadState }) {
 
 const workflowSteps = [
   {
-    title: "Upload Documents",
-    description: "Upload your PDFs and organize them into folders for easy access.",
+    title: "Upload PDF / Text",
+    description: "Upload your PDFs or paste study text to start building your learning workspace.",
     icon: Upload,
     tone: "purple",
     href: "#library"
@@ -1094,9 +1094,16 @@ const workflowSteps = [
   {
     title: "Review Weak Topics",
     description: "Identify your weak areas and revisit the concepts that need improvement.",
-    icon: Target,
+    icon: Brain,
     tone: "orange",
     href: "#review"
+  },
+  {
+    title: "Create Notes",
+    description: "Copy AI summaries, add your own points, and build a personal revision notebook.",
+    icon: NotebookPen,
+    tone: "gold",
+    href: "#notes"
   },
   {
     title: "Track Progress",
@@ -1108,21 +1115,26 @@ const workflowSteps = [
 ];
 
 const studyFlowSteps = [
-  { label: "Upload PDF", description: "Add your study material", icon: Upload, tone: "purple" },
+  { label: "Upload PDF / Text", description: "Add your study material", icon: Upload, tone: "purple" },
   { label: "AI Summary", description: "Get key points and notes", icon: FileText, tone: "green" },
   { label: "AI Tutor", description: "Clarify doubts and concepts", icon: MessageCircle, tone: "blue" },
   { label: "Flashcards", description: "Review and memorize", icon: BookOpen, tone: "gold" },
   { label: "Quiz", description: "Test your understanding", icon: ClipboardList, tone: "pink" },
-  { label: "Weak Topics", description: "Focus on areas that need work", icon: Target, tone: "orange" },
-  { label: "Review & Retake", description: "Improve and score higher", icon: LineChart, tone: "teal" }
+  { label: "Weak Topics", description: "Focus on areas that need work", icon: Brain, tone: "orange" },
+  { label: "Notes", description: "Build your notebook", icon: NotebookPen, tone: "gold" },
+  { label: "Track Progress", description: "Monitor growth", icon: LineChart, tone: "teal" }
 ];
 
 function HowItWorksPage() {
   return (
     <div className="how-page">
       <header className="how-header">
+        <a className="how-back-button" href="#dashboard">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </a>
         <h1>How It Works</h1>
-        <p>Your AI-powered study workflow, step by step.</p>
+        <p>Learn the complete StudyMind AI workflow from uploading content to revision and progress tracking.</p>
       </header>
 
       <section className="how-steps-grid" aria-label="StudyMind workflow steps">
