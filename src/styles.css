@@ -2288,6 +2288,7 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
+  border-color: rgba(245, 179, 1, 0.62);
 }
 
 .library-header h1 {
@@ -2304,7 +2305,7 @@ button {
 }
 
 .upload-text-header {
-  border: 1px solid rgba(245, 179, 1, 0.42);
+  border: 1px solid rgba(245, 179, 1, 0.62);
   border-radius: 16px;
   background: linear-gradient(135deg, rgba(10, 45, 122, 0.94), rgba(6, 27, 79, 0.9));
   padding: 24px;
@@ -2327,7 +2328,7 @@ button {
 .upload-text-card {
   display: grid;
   gap: 20px;
-  border: 1px solid rgba(184, 196, 224, 0.2);
+  border: 1px solid rgba(245, 179, 1, 0.62);
   border-radius: 16px;
   background: var(--secondary-bg);
   padding: 24px;
@@ -3408,6 +3409,7 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
+  border-color: rgba(245, 179, 1, 0.62);
   padding: 24px;
 }
 
@@ -3489,6 +3491,7 @@ button {
 
 .review-empty-home,
 .review-folder-page {
+  border-color: rgba(245, 179, 1, 0.62);
   padding: 22px;
 }
 
@@ -3603,7 +3606,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  border: 1px solid rgba(245, 179, 1, 0.36);
+  border: 1px solid rgba(245, 179, 1, 0.62);
   border-radius: 16px;
   background: var(--secondary-bg);
   padding: 24px;
@@ -3634,7 +3637,7 @@ button {
 
 .notes-list-panel,
 .note-workspace {
-  border: 1px solid rgba(184, 196, 224, 0.2);
+  border: 1px solid rgba(245, 179, 1, 0.62);
   border-radius: 14px;
   background: var(--secondary-bg);
   padding: 22px;
@@ -3760,7 +3763,7 @@ button {
   grid-template-columns: minmax(0, 1fr) minmax(360px, auto);
   align-items: flex-start;
   gap: 28px;
-  border: 1px solid rgba(245, 179, 1, 0.36);
+  border: 1px solid rgba(245, 179, 1, 0.62);
   border-radius: 16px;
   background: var(--secondary-bg);
   padding: 24px;
@@ -5815,7 +5818,7 @@ button {
 
 .flashcard-stage {
   position: relative;
-  width: min(820px, 100%);
+  width: min(760px, 100%);
   min-height: 420px;
   justify-self: center;
   border: 0;
@@ -5830,54 +5833,112 @@ button {
   display: grid;
   align-content: center;
   gap: 18px;
+  overflow: hidden;
   min-height: 420px;
   backface-visibility: hidden;
-  border: 1px solid rgba(245, 179, 1, 0.68);
-  border-radius: 20px;
-  background: var(--card-bg);
+  border-radius: 18px;
   padding: clamp(28px, 4vw, 56px);
   text-align: center;
-  transition: transform 260ms ease;
-  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.25);
+  transition: transform 260ms ease, visibility 0s linear 130ms;
+  box-shadow:
+    0 24px 58px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
+  isolation: isolate;
+}
+
+.flashcard-face::before,
+.flashcard-face::after {
+  position: absolute;
+  content: "";
+  pointer-events: none;
+}
+
+.flashcard-face::before {
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(112deg, transparent 18%, rgba(255, 255, 255, 0.1) 34%, transparent 48%),
+    radial-gradient(ellipse at 50% -12%, rgba(255, 255, 255, 0.18), transparent 48%);
+  opacity: 0.72;
+}
+
+.flashcard-face::after {
+  inset: 7px;
+  z-index: 0;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 13px;
+}
+
+.flashcard-front {
+  border: 1px solid rgba(93, 177, 255, 0.72);
+  background:
+    radial-gradient(circle at 13% 12%, rgba(66, 153, 255, 0.38), transparent 31%),
+    radial-gradient(circle at 88% 84%, rgba(20, 94, 210, 0.3), transparent 34%),
+    linear-gradient(145deg, #164b9e 0%, #0b347d 42%, #071f56 100%);
+}
+
+.flashcard-back {
+  border: 1px solid rgba(221, 181, 91, 0.68);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 224, 146, 0.25), transparent 31%),
+    radial-gradient(circle at 85% 88%, rgba(120, 76, 20, 0.28), transparent 38%),
+    linear-gradient(145deg, #9a6a21 0%, #765018 46%, #4d3414 100%);
+  visibility: hidden;
+  transform: rotateY(0deg);
+}
+
+.flashcard-face > * {
+  position: relative;
+  z-index: 1;
 }
 
 .flashcard-face span {
   justify-self: center;
   border: 1px solid rgba(245, 179, 1, 0.28);
   border-radius: 999px;
-  background: rgba(6, 27, 79, 0.7);
+  background: rgba(3, 17, 50, 0.46);
   padding: 7px 12px;
-  color: var(--gold);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
+.flashcard-back span {
+  border-color: rgba(255, 235, 184, 0.3);
+  background: rgba(65, 40, 10, 0.38);
+}
+
 .flashcard-face h2 {
   max-width: 720px;
   margin: 0 auto;
+  color: #fff;
   font-size: clamp(26px, 3vw, 38px);
   line-height: 1.25;
   letter-spacing: 0;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
 }
 
 .flashcard-face em {
   justify-self: center;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.74);
   font-style: normal;
   font-weight: 800;
 }
 
-.flashcard-back {
-  transform: rotateY(180deg);
+.flashcard-back em {
+  color: rgba(255, 239, 198, 0.84);
 }
 
 .flashcard-stage.flipped .flashcard-front {
-  transform: rotateY(180deg);
+  visibility: hidden;
+  transform: rotateY(-360deg);
 }
 
 .flashcard-stage.flipped .flashcard-back {
-  transform: rotateY(360deg);
+  visibility: visible;
+  transform: rotateY(-360deg);
 }
 
 .deck-complete-card {
