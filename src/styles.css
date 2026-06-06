@@ -387,22 +387,24 @@ button {
   width: 18px;
   height: 56px;
   place-items: center;
-  border: 1px solid rgba(59, 130, 246, 0.46);
-  border-left-color: rgba(184, 196, 224, 0.16);
+  border: 1px solid rgba(255, 248, 240, 0.32);
+  border-left-color: rgba(255, 248, 240, 0.18);
   border-radius: 0 999px 999px 0;
   background:
-    linear-gradient(180deg, rgba(10, 45, 122, 0.96), rgba(6, 27, 79, 0.98)),
-    #061b4f;
+    linear-gradient(180deg, rgba(6, 27, 79, 0.96), rgba(3, 17, 53, 0.98)),
+    #031135;
   color: var(--gold);
   line-height: 1;
+  opacity: 0.65;
   box-shadow:
-    6px 0 18px rgba(59, 130, 246, 0.14),
-    0 7px 16px rgba(0, 0, 0, 0.18),
-    inset 1px 0 0 rgba(255, 248, 240, 0.07);
+    3px 0 10px rgba(59, 130, 246, 0.06),
+    0 5px 12px rgba(0, 0, 0, 0.14),
+    inset 1px 0 0 rgba(255, 248, 240, 0.04);
   transform: translateY(-50%);
   transition:
     right 300ms ease-in-out,
     transform 220ms ease,
+    opacity 180ms ease,
     border-color 180ms ease,
     background 180ms ease,
     box-shadow 180ms ease;
@@ -414,10 +416,11 @@ button {
   background:
     linear-gradient(180deg, rgba(13, 57, 148, 0.98), rgba(8, 35, 98, 0.98)),
     #0a2d7a;
+  opacity: 1;
   box-shadow:
-    7px 0 22px rgba(59, 130, 246, 0.24),
-    0 8px 20px rgba(0, 0, 0, 0.22),
-    0 0 12px rgba(59, 130, 246, 0.16),
+    6px 0 20px rgba(59, 130, 246, 0.2),
+    0 8px 18px rgba(0, 0, 0, 0.2),
+    0 0 10px rgba(59, 130, 246, 0.14),
     inset 1px 0 0 rgba(255, 248, 240, 0.12);
   transform: translate(1px, -50%) scale(1.02);
 }
@@ -430,13 +433,14 @@ button {
 .sidebar-toggle svg {
   width: 16px;
   height: 16px;
-  filter: drop-shadow(0 0 6px rgba(245, 179, 1, 0.24));
+  filter: drop-shadow(0 0 4px rgba(245, 179, 1, 0.14));
   transform: translateX(-5px);
-  transition: transform 180ms ease;
+  transition: filter 180ms ease, transform 180ms ease;
 }
 
 .sidebar-toggle:hover svg,
 .sidebar-toggle:focus-visible svg {
+  filter: drop-shadow(0 0 6px rgba(245, 179, 1, 0.26));
   transform: translateX(-5px) scale(1.04);
 }
 
@@ -2048,10 +2052,39 @@ button {
 }
 
 .learning-card {
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 14px 16px;
-  padding: 20px;
+  gap: 18px 16px;
+  padding: 24px 22px 22px;
+}
+
+.learning-dismiss {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(184, 196, 224, 0.16);
+  border-radius: 10px;
+  background: rgba(2, 11, 45, 0.28);
+  color: var(--muted);
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.learning-dismiss:hover,
+.learning-dismiss:focus-visible {
+  border-color: rgba(245, 179, 1, 0.46);
+  background: rgba(10, 45, 122, 0.58);
+  color: #fff8f0;
+  transform: translateY(-1px);
+}
+
+.learning-dismiss:focus-visible {
+  outline: 2px solid rgba(245, 179, 1, 0.58);
+  outline-offset: 2px;
 }
 
 .subject-icon {
@@ -2064,6 +2097,7 @@ button {
 
 .learning-content {
   min-width: 0;
+  padding-right: 20px;
 }
 
 .learning-card h3 {
@@ -2128,8 +2162,10 @@ button {
 .learning-actions {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(128px, 1fr));
   gap: 10px;
+  justify-self: center;
+  width: min(100%, 340px);
 }
 
 .learning-actions a,
@@ -2156,10 +2192,6 @@ button {
 .learning-actions a.secondary {
   background: var(--secondary-bg);
   color: var(--gold);
-}
-
-.learning-actions button {
-  color: var(--muted);
 }
 
 .learning-actions a:hover,
@@ -6494,7 +6526,7 @@ button {
   }
 
   .learning-actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .panel {

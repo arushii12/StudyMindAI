@@ -55,7 +55,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const navigationItems = [
   { label: "Dashboard", icon: LayoutDashboard, page: "dashboard", href: "#dashboard" },
   { label: "Library", icon: LibraryBig, page: "library", href: "#library" },
-  { label: "Upload as Text", icon: ClipboardList, page: "upload-text", href: "#upload-text" },
+  { label: "Upload as Text", icon: NotebookPen, page: "upload-text", href: "#upload-text" },
   { label: "Summary", icon: FileText, page: "summary", href: "#summary" },
   { label: "Flashcards", icon: BookOpen, page: "flashcards", href: "#flashcards" },
   { label: "Quizzes", icon: Brain, page: "quizzes", href: "#quizzes" },
@@ -6598,6 +6598,14 @@ function ContinueLearning({ items }) {
         <div className="learning-grid">
           {visibleItems.map((item) => (
             <article className="learning-card" key={item.subject}>
+              <button
+                className="learning-dismiss"
+                type="button"
+                aria-label={`Remove ${item.subject} from Continue Learning`}
+                onClick={() => setPendingRemoveItem(item)}
+              >
+                <X size={16} />
+              </button>
               <div className="subject-icon">
                 <BookOpen size={22} />
               </div>
@@ -6616,7 +6624,6 @@ function ContinueLearning({ items }) {
               <div className="learning-actions">
                 <a className="primary" href={item.summaryHref || "#summary"}>{item.primaryActionLabel || "Continue"}</a>
                 <a className="secondary" href={item.quizHref || "#quizzes"}>Quiz Yourself</a>
-                <button type="button" onClick={() => setPendingRemoveItem(item)}>Remove</button>
               </div>
             </article>
           ))}
