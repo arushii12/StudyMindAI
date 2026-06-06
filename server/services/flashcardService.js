@@ -19,7 +19,28 @@ export async function getFlashcardsForUser(user, options = {}) {
     throw error;
   }
 
-  const document = await findSelectedDocument(user.id, options.documentId);
+  let set = null;
+  let document = null;
+
+  if (options.setId) {
+    if (!mongoose.Types.ObjectId.isValid(options.setId)) {
+      const error = new Error("Invalid flashcard set id.");
+      error.status = 400;
+      throw error;
+    }
+
+    set = await FlashcardSet.findOne({ _id: options.setId, userId: user.id }).lean();
+
+    if (!set) {
+      const error = new Error("Flashcard set not found.");
+      error.status = 404;
+      throw error;
+    }
+
+    document = await findSelectedDocument(user.id, set.documentId);
+  } else {
+    document = await findSelectedDocument(user.id, options.documentId);
+  }
 
   if (!document) {
     const error = new Error("No uploaded document found for flashcards.");
@@ -27,9 +48,11 @@ export async function getFlashcardsForUser(user, options = {}) {
     throw error;
   }
 
-  const set = await FlashcardSet.findOne({ userId: user.id, documentId: document._id })
-    .sort({ generatedAt: -1, updatedAt: -1 })
-    .lean();
+  if (!set) {
+    set = await FlashcardSet.findOne({ userId: user.id, documentId: document._id })
+      .sort({ generatedAt: -1, updatedAt: -1 })
+      .lean();
+  }
 
   if (!set) {
     return {

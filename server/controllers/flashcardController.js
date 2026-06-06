@@ -9,7 +9,8 @@ import {
 export async function getFlashcards(req, res, next) {
   try {
     const flashcards = await getFlashcardsForUser(req.user, {
-      documentId: req.query.documentId
+      documentId: req.query.documentId,
+      setId: req.query.setId
     });
     res.json(flashcards);
   } catch (error) {

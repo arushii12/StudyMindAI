@@ -21,6 +21,7 @@ import {
   Flame,
   Folder,
   GraduationCap,
+  Keyboard,
   LayoutDashboard,
   Layers,
   LibraryBig,
@@ -55,7 +56,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const navigationItems = [
   { label: "Dashboard", icon: LayoutDashboard, page: "dashboard", href: "#dashboard" },
   { label: "Library", icon: LibraryBig, page: "library", href: "#library" },
-  { label: "Upload as Text", icon: NotebookPen, page: "upload-text", href: "#upload-text" },
+  { label: "Upload as Text", icon: Keyboard, page: "upload-text", href: "#upload-text" },
   { label: "Summary", icon: FileText, page: "summary", href: "#summary" },
   { label: "Flashcards", icon: BookOpen, page: "flashcards", href: "#flashcards" },
   { label: "Quizzes", icon: Brain, page: "quizzes", href: "#quizzes" },
@@ -1557,7 +1558,7 @@ function UploadTextPage() {
           <input
             maxLength={120}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="e.g., DBMS Unit 1 Notes"
+            placeholder="Example, DBMS Unit 1 Notes"
             type="text"
             value={title}
           />
@@ -5423,6 +5424,7 @@ function QuizResultsPage() {
 function FlashcardsPage() {
   const params = getHashParams();
   const documentId = params.get("documentId");
+  const setId = params.get("setId");
   const [deckData, setDeckData] = useState(null);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
@@ -5436,6 +5438,9 @@ function FlashcardsPage() {
     message: ""
   });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const activeFlashcardSetIdRef = useRef("");
+  activeFlashcardSetIdRef.current = deckData?.flashcardSet?.id || "";
   useAutoDismissStatus(deleteState, setDeleteState);
 
   useEffect(() => {
@@ -5467,8 +5472,19 @@ function FlashcardsPage() {
       try {
         setStatus("loading");
         setError("");
-        const query = documentId ? `?documentId=${documentId}` : "";
+        const queryParams = new URLSearchParams();
+
+        if (documentId) {
+          queryParams.set("documentId", documentId);
+        }
+
+        if (setId) {
+          queryParams.set("setId", setId);
+        }
+
+        const query = queryParams.size ? `?${queryParams.toString()}` : "";
         const response = await fetch(`/api/flashcards${query}`, {
+          cache: "no-store",
           signal: controller.signal
         });
         const data = await response.json();
@@ -5495,17 +5511,29 @@ function FlashcardsPage() {
     loadFlashcards();
 
     return () => controller.abort();
-  }, [documentId]);
+  }, [documentId, setId]);
 
   async function handleGenerateFlashcards() {
+    if (isGenerating) {
+      return;
+    }
+
     try {
       setIsGenerating(true);
       setError("");
+      setSavingState("idle");
+      const currentDeck = deckData?.flashcardSet;
+      const selectedDocumentIds = currentDeck?.generationType === "selected"
+        ? currentDeck.selectedDocumentIds
+        : undefined;
       const response = await fetch("/api/flashcards/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        cache: "no-store",
         body: JSON.stringify({
           documentId: deckData?.document?.id || documentId,
+          documentIds: selectedDocumentIds,
+          folderId: selectedDocumentIds?.length ? currentDeck.folderId : undefined,
           cardCount: 12
         })
       });
@@ -5519,8 +5547,10 @@ function FlashcardsPage() {
       setCurrentIndex(0);
       setIsFlipped(false);
       setDeckComplete(false);
+      setSavingState("idle");
       setStatus("success");
       window.location.hash = `#flashcards?documentId=${data.document.id}&setId=${data.flashcardSet.id}`;
+      window.dispatchEvent(new Event("studymind:dashboard-refresh"));
     } catch (generateError) {
       setError(generateError.message || "Unable to generate flashcards.");
       setStatus("error");
@@ -5534,9 +5564,11 @@ function FlashcardsPage() {
       return;
     }
 
+    const flashcardSetId = deckData.flashcardSet.id;
+
     try {
       setSavingState("saving");
-      const response = await fetch(`/api/flashcards/${deckData.flashcardSet.id}/review`, {
+      const response = await fetch(`/api/flashcards/${flashcardSetId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -5551,14 +5583,19 @@ function FlashcardsPage() {
         throw new Error(data.message || "Could not save flashcard progress.");
       }
 
-      setDeckData((current) => ({
-        ...current,
-        progress: data.progress
-      }));
-      setSavingState("saved");
+      setDeckData((current) => (
+        current?.flashcardSet?.id === flashcardSetId
+          ? { ...current, progress: data.progress }
+          : current
+      ));
+      if (activeFlashcardSetIdRef.current === flashcardSetId) {
+        setSavingState("saved");
+      }
     } catch (saveError) {
-      setSavingState("error");
-      setError(saveError.message || "Could not save flashcard progress.");
+      if (activeFlashcardSetIdRef.current === flashcardSetId) {
+        setSavingState("error");
+        setError(saveError.message || "Could not save flashcard progress.");
+      }
     }
   }
 
@@ -5672,6 +5709,15 @@ function FlashcardsPage() {
           <p>Flip through concise revision cards generated from your uploaded study material.</p>
         </div>
         <div className="generated-content-actions">
+          <button
+            className="flashcard-guide-button"
+            type="button"
+            aria-label="Open Quick Guide for AI Flashcards"
+            onClick={() => setGuideOpen(true)}
+          >
+            <BookOpen size={17} />
+            <span>Quick Guide</span>
+          </button>
           <LoadingButton
             className="summary-primary-action"
             isLoading={isGenerating}
@@ -5773,8 +5819,14 @@ function FlashcardsPage() {
               />
             ) : (
               <>
-                <button className="flash-nav-button" type="button" onClick={() => goToCard(currentIndex - 1)} disabled={currentIndex === 0}>
-                  Previous
+                <button
+                  aria-label="Previous card"
+                  className="flash-nav-button previous"
+                  type="button"
+                  onClick={() => goToCard(currentIndex - 1)}
+                  disabled={currentIndex === 0 || isGenerating}
+                >
+                  <ChevronLeft aria-hidden="true" size={24} strokeWidth={2.4} />
                 </button>
 
                 <button className={`flashcard-stage ${isFlipped ? "flipped" : ""}`} type="button" onClick={() => setIsFlipped((value) => !value)}>
@@ -5790,8 +5842,14 @@ function FlashcardsPage() {
                   </div>
                 </button>
 
-                <button className="flash-nav-button" type="button" onClick={() => goToCard(currentIndex + 1)}>
-                  Next
+                <button
+                  aria-label="Next card"
+                  className="flash-nav-button next"
+                  type="button"
+                  onClick={() => goToCard(currentIndex + 1)}
+                  disabled={isGenerating}
+                >
+                  <ChevronRight aria-hidden="true" size={24} strokeWidth={2.4} />
                 </button>
               </>
             )}
@@ -5821,6 +5879,81 @@ function FlashcardsPage() {
           onConfirm={handleDeleteFlashcards}
         />
       )}
+      {guideOpen && <FlashcardGuideModal onClose={() => setGuideOpen(false)} />}
+    </div>
+  );
+}
+
+function FlashcardGuideModal({ onClose }) {
+  useEffect(() => {
+    function handleKeydown(event) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [onClose]);
+
+  const guideItems = [
+    {
+      title: "Tap for Answer",
+      text: "Tap anywhere on the card to know the answer."
+    },
+    {
+      title: "Got It",
+      text: "Mark it if you understand the concept well."
+    },
+    {
+      title: "Didn't Know",
+      text: "Mark it if you need more revision on this topic."
+    },
+    {
+      title: "Track your mastery",
+      text: "Your responses help us calculate your mastery score."
+    },
+    {
+      title: "Get smart recommendations",
+      text: "At the end, we'll recommend whether you're ready for the quiz or should review more."
+    }
+  ];
+
+  return (
+    <div
+      className="flashcard-guide-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="flashcard-guide-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="flashcard-guide-title"
+      >
+        <button className="flashcard-guide-close" type="button" aria-label="Close Quick Guide" onClick={onClose}>
+          <X size={18} />
+        </button>
+        <div className="flashcard-guide-heading">
+          <span>Quick Guide</span>
+          <h2 id="flashcard-guide-title">How Flashcards Work</h2>
+        </div>
+        <div className="flashcard-guide-list">
+          {guideItems.map((item) => (
+            <div className="flashcard-guide-item" key={item.title}>
+              <strong>{item.title}</strong>
+              <p>{item.text}</p>
+            </div>
+          ))}
+        </div>
+        <div className="flashcard-guide-actions">
+          <button type="button" onClick={onClose}>Got it</button>
+        </div>
+      </section>
     </div>
   );
 }
