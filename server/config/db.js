@@ -1,5 +1,8 @@
+// Import Mongoose so this file can open one shared MongoDB connection for all models.
 import mongoose from "mongoose";
 
+// Called from server.js during startup.
+// It connects once, then every service can use Mongoose models safely.
 export async function connectDatabase() {
   const uri = process.env.MONGO_URI;
 
@@ -20,6 +23,8 @@ export async function connectDatabase() {
   }
 }
 
+// Services call this before database-heavy work.
+// It lets them return controlled errors when MongoDB is not ready.
 export function isDatabaseConnected() {
   return mongoose.connection.readyState === 1;
 }

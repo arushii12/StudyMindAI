@@ -1,5 +1,8 @@
+// Import Mongoose so this file can define important summary questions.
 import mongoose from "mongoose";
 
+// ImportantQuestion stores AI-generated revision questions for a saved summary.
+// Each record is tied to userId, documentId, and summaryId for ownership checks.
 const importantQuestionSchema = new mongoose.Schema(
   {
     userId: {
@@ -34,6 +37,8 @@ const importantQuestionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Keep questions in their generated order when a summary is opened.
 importantQuestionSchema.index({ summaryId: 1, order: 1 });
 
+// Export the model used by summaryService.
 export default mongoose.model("ImportantQuestion", importantQuestionSchema);

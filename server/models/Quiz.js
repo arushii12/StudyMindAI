@@ -1,5 +1,8 @@
+// Import Mongoose so this file can define saved quiz records.
 import mongoose from "mongoose";
 
+// Quiz stores AI-generated questions, options, correct answers, and explanations.
+// Each query includes userId so a learner can only access their own quizzes.
 const quizSchema = new mongoose.Schema(
   {
     userId: {
@@ -105,8 +108,12 @@ const quizSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Speed up dashboard stats grouped by subject and topic.
 quizSchema.index({ userId: 1, subject: 1, topic: 1 });
+// Speed up loading the latest quiz for one document.
 quizSchema.index({ userId: 1, documentId: 1, generatedAt: -1 });
+// Speed up folder and selected-PDF quiz history queries.
 quizSchema.index({ userId: 1, folderId: 1, generationType: 1, generatedAt: -1 });
 
+// Export the model used by quizService.
 export default mongoose.model("Quiz", quizSchema);

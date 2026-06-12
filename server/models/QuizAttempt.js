@@ -1,5 +1,8 @@
+// Import Mongoose so this file can define submitted quiz attempts.
 import mongoose from "mongoose";
 
+// QuizAttempt stores one completed quiz result.
+// dashboardService uses these records for scores, weak topics, and activity trends.
 const quizAttemptSchema = new mongoose.Schema(
   {
     userId: {
@@ -54,7 +57,10 @@ const quizAttemptSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Speed up dashboard queries that show recent quiz activity.
 quizAttemptSchema.index({ userId: 1, completedAt: -1 });
+// Speed up topic-level progress and weak-area calculations.
 quizAttemptSchema.index({ userId: 1, topic: 1, completedAt: -1 });
 
+// Export the model used by quizService and dashboardService.
 export default mongoose.model("QuizAttempt", quizAttemptSchema);

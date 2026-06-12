@@ -1,10 +1,17 @@
+// Import Gemini's SDK so the app can call Google's AI model when configured.
 import { GoogleGenAI } from "@google/genai";
+// Import OpenAI's SDK as a fallback AI provider.
 import OpenAI from "openai";
 
+// Default Gemini model used for summary, quiz, flashcard, and notes generation.
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// Default OpenAI model used when Gemini is not configured or fails.
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
+// Called by summaryService when the user generates study notes.
+// It builds a summary prompt and expects structured JSON back from AI.
 export async function generateSummary(studyMaterial, context = {}) {
+  // Reject tiny source text before spending an AI request.
   ensureStudyMaterial(studyMaterial, "summary");
   const prompt = buildSummaryPrompt(studyMaterial, context);
   return generateStructuredJson({
@@ -14,7 +21,10 @@ export async function generateSummary(studyMaterial, context = {}) {
   });
 }
 
+// Called by quizService when the user generates a quiz.
+// The prompt asks AI for questions, options, answers, and explanations as JSON.
 export async function generateQuiz(studyMaterial, context = {}) {
+  // Quizzes need enough source material to produce meaningful questions.
   ensureStudyMaterial(studyMaterial, "quiz");
   const prompt = buildQuizPrompt(studyMaterial, context);
   return generateStructuredJson({
@@ -24,7 +34,10 @@ export async function generateQuiz(studyMaterial, context = {}) {
   });
 }
 
+// Called by flashcardService when the user generates a deck.
+// AI returns structured cards that the service validates before saving.
 export async function generateFlashcards(studyMaterial, context = {}) {
+  // Flashcards need enough text so AI does not invent generic cards.
   ensureStudyMaterial(studyMaterial, "flashcard");
   const prompt = buildFlashcardPrompt(studyMaterial, context);
   return generateStructuredJson({
@@ -34,6 +47,8 @@ export async function generateFlashcards(studyMaterial, context = {}) {
   });
 }
 
+// Called by Study Assistant chat.
+// The prompt includes document text, summary text, the user message, and chat history.
 export async function generateStudyAssistantAnswer(studyMaterial, context = {}) {
   const prompt = buildStudyAssistantPrompt(studyMaterial, context);
   return generateStructuredJson({
@@ -43,6 +58,8 @@ export async function generateStudyAssistantAnswer(studyMaterial, context = {}) 
   });
 }
 
+// Called after quiz results load.
+// AI explains performance using score counts and normalized answer details.
 export async function generateQuizPerformanceInsight(context = {}) {
   const prompt = buildQuizPerformanceInsightPrompt(context);
   return generateStructuredJson({
@@ -52,6 +69,8 @@ export async function generateQuizPerformanceInsight(context = {}) {
   });
 }
 
+// Called when React wants PDF-ready notes.
+// It chooses either quick revision notes or detailed notes based on pdfType.
 export async function generatePdfStudyNotes(summaryContent, context = {}) {
   ensureStudyMaterial(summaryContent, "PDF notes");
   const pdfType = context.pdfType === "quick" ? "quick" : "detailed";
@@ -66,6 +85,7 @@ export async function generatePdfStudyNotes(summaryContent, context = {}) {
   });
 }
 
+// Used by services to store the model name beside generated content.
 export function getActiveAiModelName() {
   if (process.env.GEMINI_API_KEY) {
     return GEMINI_MODEL;
@@ -78,7 +98,10 @@ export function getActiveAiModelName() {
   return "";
 }
 
+// Send one structured JSON request to the configured AI provider.
+// Gemini is preferred, and OpenAI is used as fallback when available.
 async function generateStructuredJson({ prompt, systemPrompt, errorLabel }) {
+  // If Gemini is missing, try OpenAI before returning a service error.
   if (!process.env.GEMINI_API_KEY) {
     if (!process.env.OPENAI_API_KEY) {
       const error = new Error("GEMINI_API_KEY is not configured. Add a Gemini API key before using AI generation.");
@@ -90,16 +113,19 @@ async function generateStructuredJson({ prompt, systemPrompt, errorLabel }) {
   }
 
   try {
+    // Use Gemini first because it is the primary configured provider for this app.
     return await generateWithGemini({ prompt, errorLabel });
   } catch (geminiError) {
     if (!process.env.OPENAI_API_KEY) {
       throw geminiError;
     }
 
+    // Fallback keeps generation working if Gemini has a temporary problem.
     return generateWithOpenAI({ prompt, systemPrompt, errorLabel });
   }
 }
 
+// Call Gemini and parse its JSON response.
 async function generateWithGemini({ prompt, errorLabel }) {
   const client = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY
@@ -113,9 +139,11 @@ async function generateWithGemini({ prompt, errorLabel }) {
     }
   }));
 
+  // Gemini responses can be nested, so extract text before parsing JSON.
   return parseAiJson(extractGeminiText(response), errorLabel);
 }
 
+// Retry Gemini on temporary rate-limit or server errors.
 async function withGeminiRetry(operation) {
   const delays = [700, 1400];
   let lastError;
@@ -137,16 +165,19 @@ async function withGeminiRetry(operation) {
   throw lastError;
 }
 
+// Treat these AI provider status codes as retryable.
 function isTransientAiError(error) {
   return [429, 500, 502, 503, 504].includes(Number(error?.status || error?.code));
 }
 
+// Small delay helper used between Gemini retry attempts.
 function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
 
+// Call OpenAI and request a JSON object response.
 async function generateWithOpenAI({ prompt, systemPrompt, errorLabel }) {
   const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
@@ -161,9 +192,11 @@ async function generateWithOpenAI({ prompt, systemPrompt, errorLabel }) {
     ]
   });
 
+  // Parse the assistant message into the structured object expected by services.
   return parseAiJson(response.choices?.[0]?.message?.content, errorLabel);
 }
 
+// Build the prompt that asks AI for short, medium, and detailed summaries.
 export function buildSummaryPrompt(studyMaterial, context = {}) {
   return `You are an expert educational summarizer.
 
@@ -225,6 +258,7 @@ Study material:
 ${trimMaterial(studyMaterial, 24000)}`;
 }
 
+// Build the prompt that asks AI for multiple-choice quiz questions.
 function buildQuizPrompt(studyMaterial, context) {
   return `You are an expert educational quiz generator.
 
@@ -275,6 +309,7 @@ Study material:
 ${trimMaterial(studyMaterial, 18000)}`;
 }
 
+// Build the prompt that asks AI to explain a learner's quiz performance.
 function buildQuizPerformanceInsightPrompt(context) {
   const answers = Array.isArray(context.answers) ? context.answers : [];
   const compactAnswers = answers.slice(0, 20).map((answer) => ({
@@ -319,6 +354,7 @@ Question performance data:
 ${JSON.stringify(compactAnswers, null, 2)}`;
 }
 
+// Build the prompt that asks AI for a compact revision PDF structure.
 export function buildQuickRevisionPrompt(summaryContent, context = {}) {
   return `Create a compact but substantial exam revision sheet from the provided source material.
 
@@ -360,6 +396,7 @@ Source material:
 ${trimMaterial(summaryContent, 26000)}`;
 }
 
+// Build the prompt that asks AI for detailed PDF notes with sections and questions.
 export function buildDetailedNotesPrompt(summaryContent, context = {}) {
   return `Create complete, polished study notes from the provided source material.
 
@@ -404,6 +441,7 @@ Source material:
 ${trimMaterial(summaryContent, 36000)}`;
 }
 
+// Build the prompt that asks AI for concise flashcard front/back pairs.
 function buildFlashcardPrompt(studyMaterial, context) {
   return `You are an expert educational flashcard generator.
 
@@ -448,6 +486,7 @@ Study material:
 ${trimMaterial(studyMaterial, 18000)}`;
 }
 
+// Build the prompt that grounds Study Assistant answers in uploaded notes and summaries.
 function buildStudyAssistantPrompt(studyMaterial, context) {
   const summaryText = trimMaterial(context.summaryText, 6000) || "No generated summary is available.";
   const history = Array.isArray(context.history)
@@ -503,6 +542,7 @@ Uploaded PDF text:
 ${trimMaterial(studyMaterial, 18000)}`;
 }
 
+// Validate that source text is long enough for useful AI generation.
 function ensureStudyMaterial(studyMaterial, type) {
   if (countWords(studyMaterial) < 40) {
     const error = new Error(`Not enough extracted study material is available to generate a ${type}.`);
@@ -511,6 +551,7 @@ function ensureStudyMaterial(studyMaterial, type) {
   }
 }
 
+// Extract plain text from Gemini's response shape.
 function extractGeminiText(response) {
   if (response.text) {
     return response.text;
@@ -522,6 +563,7 @@ function extractGeminiText(response) {
     .join("");
 }
 
+// Parse AI JSON and turn malformed output into a clean API error.
 function parseAiJson(content, errorLabel) {
   if (!content) {
     const error = new Error(`AI did not return ${errorLabel} content.`);
@@ -538,6 +580,7 @@ function parseAiJson(content, errorLabel) {
   }
 }
 
+// Remove markdown code fences if the model wraps JSON in them.
 function stripJsonFences(content) {
   return String(content)
     .replace(/^```json\s*/i, "")
@@ -546,10 +589,12 @@ function stripJsonFences(content) {
     .trim();
 }
 
+// Trim long study material so prompts stay within practical model limits.
 function trimMaterial(text, maxLength) {
   return String(text || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
+// Count words for source-length validation.
 function countWords(text) {
   return String(text || "").split(/\s+/).filter(Boolean).length;
 }

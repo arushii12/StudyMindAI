@@ -1,5 +1,8 @@
+// Import Mongoose so this file can define generated summary records.
 import mongoose from "mongoose";
 
+// Summary stores AI-generated study notes for one document or selected documents.
+// The service reads it before calling AI again so existing summaries can be reused.
 const summarySchema = new mongoose.Schema(
   {
     userId: {
@@ -76,7 +79,10 @@ const summarySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Keep one main summary record per user and document.
 summarySchema.index({ userId: 1, documentId: 1 }, { unique: true });
+// Speed up dashboard and folder queries for selected-document summaries.
 summarySchema.index({ userId: 1, folderId: 1, generationType: 1, updatedAt: -1 });
 
+// Export the model used by summaryService and other generation flows.
 export default mongoose.model("Summary", summarySchema);

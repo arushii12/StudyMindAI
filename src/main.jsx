@@ -89,13 +89,16 @@ const longLoadingMessages = [
   "Almost ready..."
 ];
 
+// Shows a small reusable spinner during API calls and loading states.
 function LoadingSpinner({ size = "md" }) {
   return <span className={`loading-spinner ${size}`} aria-hidden="true" />;
 }
 
+// Animates dots for compact loading labels.
 function AnimatedDots() {
   const [dots, setDots] = useState(".");
 
+  // Rotates the dots while a loading label is visible.
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       setDots((current) => (current.length >= 3 ? "." : `${current}.`));
@@ -107,9 +110,11 @@ function AnimatedDots() {
   return <span className="loading-dots" aria-hidden="true">{dots}</span>;
 }
 
+// Cycles through longer loading messages when an AI request takes time.
 function useLongLoadingMessage(messages = longLoadingMessages, delayMs = 5000, rotateMs = 2600) {
   const [messageIndex, setMessageIndex] = useState(-1);
 
+  // Starts rotating helpful status text after a short delay.
   useEffect(() => {
     const delayId = window.setTimeout(() => setMessageIndex(0), delayMs);
     let intervalId;
@@ -133,6 +138,7 @@ function useLongLoadingMessage(messages = longLoadingMessages, delayMs = 5000, r
   return messageIndex >= 0 ? messages[messageIndex] : "";
 }
 
+// Standard loading banner used across pages while backend or AI work is running.
 function LoadingBanner({
   title = "Loading",
   detail = "Please wait while StudyMind prepares this for you.",
@@ -160,10 +166,12 @@ function LoadingBanner({
   );
 }
 
+// Removes trailing dots so loading titles read cleanly with animated dots.
 function cleanLoadingTitle(title = "Loading") {
   return String(title).replace(/\.+$/g, "").trim() || "Loading";
 }
 
+// Reusable button that swaps its label for a spinner during submit actions.
 function LoadingButton({
   children,
   isLoading = false,
@@ -189,6 +197,7 @@ function LoadingButton({
   );
 }
 
+// Main shell that restores auth, tracks navigation, and renders protected pages.
 function App() {
   const [page, setPage] = useState(getPageFromHash());
   const [auth, setAuth] = useState({
@@ -212,18 +221,21 @@ function App() {
   });
   const liveStudySeconds = useStudyActivityTracker(page, auth.status === "authenticated");
 
+  // Keeps the active page in sync with hash navigation.
   useEffect(() => {
     const handleHashChange = () => setPage(getPageFromHash());
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
+  // Lets pages refresh dashboard stats after uploads, quizzes, notes, or reviews change data.
   useEffect(() => {
     const handleDashboardRefresh = () => setDashboardRefreshToken((token) => token + 1);
     window.addEventListener("studymind:dashboard-refresh", handleDashboardRefresh);
     return () => window.removeEventListener("studymind:dashboard-refresh", handleDashboardRefresh);
   }, []);
 
+  // Saves the sidebar preference so navigation feels consistent after reloads.
   useEffect(() => {
     try {
       localStorage.setItem("sidebarCollapsed", String(sidebarCollapsed));
@@ -232,6 +244,7 @@ function App() {
     }
   }, [sidebarCollapsed]);
 
+  // Loads the logged-in user when the app starts.
   useEffect(() => {
     let cancelled = false;
 
@@ -261,6 +274,7 @@ function App() {
     };
   }, []);
 
+  // Loads dashboard data only when a protected dashboard/profile view needs it.
   useEffect(() => {
     if (auth.status !== "authenticated" || !["dashboard", "profile"].includes(page)) {
       return undefined;
@@ -298,17 +312,20 @@ function App() {
 
   const user = dashboard?.user || auth.user;
 
+  // Stores the authenticated user returned from login or signup.
   async function handleAuthenticated(userData) {
     setDashboard(null);
     setAuth({ status: "authenticated", user: userData });
     window.location.hash = "#dashboard";
   }
 
+  // Updates profile data in local app state after the profile form is saved.
   function handleProfileUpdated(userData) {
     setAuth({ status: "authenticated", user: userData });
     setDashboard((current) => current ? { ...current, user: userData } : current);
   }
 
+  // Logs out on the backend, then clears protected frontend state.
   async function handleLogout() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
@@ -341,6 +358,7 @@ function App() {
     return <AuthPage onAuthenticated={handleAuthenticated} />;
   }
 
+  // Routes authenticated users to the selected page component.
   return (
     <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <Sidebar
@@ -402,16 +420,19 @@ function App() {
   );
 }
 
+// Converts the current URL hash into the active page name.
 function getPageFromHash() {
   const hash = window.location.hash.replace("#", "").split("?")[0];
   return hash || "dashboard";
 }
 
+// Reads query parameters from the hash, such as documentId or quizId.
 function getHashParams() {
   const query = window.location.hash.split("?")[1] || "";
   return new URLSearchParams(query);
 }
 
+// Reads the last active text material used by summary, quiz, and flashcard pages.
 function getActiveTextMaterialId() {
   try {
     return localStorage.getItem(ACTIVE_TEXT_MATERIAL_KEY) || "";
@@ -420,6 +441,7 @@ function getActiveTextMaterialId() {
   }
 }
 
+// Saves or clears the active material id and tells other components it changed.
 function setActiveTextMaterialId(documentId) {
   try {
     if (documentId) {
@@ -433,6 +455,7 @@ function setActiveTextMaterialId(documentId) {
   }
 }
 
+// Adds the active document id to study links that need source material context.
 function getNavigationHref(item) {
   if (!["summary", "quizzes", "flashcards"].includes(item.page)) {
     return item.href;
@@ -442,10 +465,12 @@ function getNavigationHref(item) {
   return documentId ? `${item.href}?documentId=${encodeURIComponent(documentId)}` : item.href;
 }
 
+// Validates email format before sending auth requests.
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
 }
 
+// Builds initials for the sidebar and profile avatar.
 function getUserInitials(user = {}) {
   return String(user.name || user.email || "U")
     .split(/\s+/)
@@ -456,6 +481,7 @@ function getUserInitials(user = {}) {
     .toUpperCase();
 }
 
+// Combines saved dashboard stats with live study time for the profile page.
 function buildProfileStats(dashboard, liveStudySeconds = 0) {
   const stats = dashboard?.stats || {};
   const totalStudyMinutes = Number(stats.totalStudyMinutes || 0) + Math.floor(Number(liveStudySeconds || 0) / 60);
@@ -469,6 +495,7 @@ function buildProfileStats(dashboard, liveStudySeconds = 0) {
   ];
 }
 
+// Formats study time into a short minutes/hours label.
 function formatStudyMinutes(minutes) {
   const totalMinutes = Math.max(0, Math.round(Number(minutes || 0)));
   const hours = Math.floor(totalMinutes / 60);
@@ -485,6 +512,7 @@ function formatStudyMinutes(minutes) {
   return `${hours}h ${remainingMinutes}m`;
 }
 
+// Tracks active study time and periodically reports it to the dashboard backend.
 function useStudyActivityTracker(page, enabled = true) {
   const [liveSeconds, setLiveSeconds] = useState(0);
   const lastActivityRef = useRef(Date.now());
@@ -492,10 +520,12 @@ function useStudyActivityTracker(page, enabled = true) {
   const pendingSecondsRef = useRef(0);
   const sourceRef = useRef(page || "dashboard");
 
+  // Keeps the activity source aligned with the current page.
   useEffect(() => {
     sourceRef.current = page || "dashboard";
   }, [page]);
 
+  // Counts visible active time and flushes it before the tab closes.
   useEffect(() => {
     if (!enabled) {
       return undefined;
@@ -579,6 +609,7 @@ function useStudyActivityTracker(page, enabled = true) {
   return liveSeconds;
 }
 
+// Automatically clears success messages after a short delay.
 function useAutoDismissMessage(message, setMessage, duration = TOAST_DISMISS_MS) {
   useEffect(() => {
     if (message.type !== "success") {
@@ -597,6 +628,7 @@ function useAutoDismissMessage(message, setMessage, duration = TOAST_DISMISS_MS)
   }, [duration, message.text, message.type, setMessage]);
 }
 
+// Automatically clears success status objects after a short delay.
 function useAutoDismissStatus(state, setState, duration = TOAST_DISMISS_MS) {
   useEffect(() => {
     if (state.status !== "success") {
@@ -615,11 +647,13 @@ function useAutoDismissStatus(state, setState, duration = TOAST_DISMISS_MS) {
   }, [duration, setState, state.message, state.status]);
 }
 
+// Renders protected navigation and keeps document-aware links up to date.
 function Sidebar({ user, activePage, collapsed, onLogout, onToggle }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [, setActiveMaterialVersion] = useState(0);
   const initials = getUserInitials(user);
 
+  // Re-renders sidebar links when a new active material is selected.
   useEffect(() => {
     const handleActiveMaterialChange = () => {
       setActiveMaterialVersion((version) => version + 1);
@@ -694,6 +728,7 @@ function Sidebar({ user, activePage, collapsed, onLogout, onToggle }) {
   );
 }
 
+// Switches between login and signup before the protected app is shown.
 function AuthPage({ onAuthenticated }) {
   const [mode, setMode] = useState("login");
 
@@ -725,12 +760,14 @@ function AuthPage({ onAuthenticated }) {
   );
 }
 
+// Handles login validation and sends credentials to the auth API.
 function LoginForm({ onAuthenticated, onCreateAccount }) {
   const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState({});
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
 
+  // Validates the login form before asking the backend to create a session.
   async function handleSubmit(event) {
     event.preventDefault();
     const nextErrors = {};
@@ -816,6 +853,7 @@ function LoginForm({ onAuthenticated, onCreateAccount }) {
   );
 }
 
+// Handles account creation and starts an authenticated session on success.
 function SignupForm({ onAuthenticated, onLogin }) {
   const [form, setForm] = useState({
     name: "",
@@ -827,6 +865,7 @@ function SignupForm({ onAuthenticated, onLogin }) {
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
 
+  // Validates signup fields before sending them to the register endpoint.
   async function handleSubmit(event) {
     event.preventDefault();
     const nextErrors = {};
@@ -937,6 +976,7 @@ function SignupForm({ onAuthenticated, onLogin }) {
   );
 }
 
+// Reusable auth/profile input with inline validation feedback.
 function AuthField({ autoComplete, error, label, name, onChange, type = "text", value }) {
   return (
     <label className="auth-field">
@@ -957,11 +997,13 @@ function AuthField({ autoComplete, error, label, name, onChange, type = "text", 
   );
 }
 
+// Dashboard header with the quick PDF upload entry point.
 function Header({ user, uploadState, setUploadState }) {
   const firstName = user.name.split(" ")[0] || "Alex";
   const fileInputRef = useRef(null);
   useAutoDismissStatus(uploadState, setUploadState);
 
+  // Uploads one dashboard PDF and opens its generated summary.
   async function handleFileChange(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -1126,6 +1168,7 @@ const studyFlowSteps = [
   { label: "Track Progress", description: "Monitor growth", icon: LineChart, tone: "teal" }
 ];
 
+// Explains the app workflow without loading backend data.
 function HowItWorksPage() {
   return (
     <div className="how-page">
@@ -1211,6 +1254,7 @@ function HowItWorksPage() {
   );
 }
 
+// Shows profile details, study totals, and account actions.
 function ProfilePage({ user, dashboard, status, error, liveStudySeconds = 0, onLogout, onProfileUpdated }) {
   const [activeAction, setActiveAction] = useState("");
   const initials = getUserInitials(user);
@@ -1284,6 +1328,7 @@ function ProfilePage({ user, dashboard, status, error, liveStudySeconds = 0, onL
   );
 }
 
+// Modal used for editing name, email, or password.
 function ProfileActionModal({ action, user, onClose, onUpdated }) {
   const config = {
     name: {
@@ -1307,6 +1352,7 @@ function ProfileActionModal({ action, user, onClose, onUpdated }) {
   const [message, setMessage] = useState("");
   const [requestStatus, setRequestStatus] = useState("idle");
 
+  // Validates the selected profile action before patching the account.
   async function handleSubmit(event) {
     event.preventDefault();
     const nextErrors = {};
@@ -1403,6 +1449,7 @@ function ProfileActionModal({ action, user, onClose, onUpdated }) {
   );
 }
 
+// Lets users paste study text and generate AI study material from it.
 function UploadTextPage() {
   const [title, setTitle] = useState("");
   const [studyText, setStudyText] = useState("");
@@ -1413,6 +1460,7 @@ function UploadTextPage() {
   const maxCharacters = 20000;
   useAutoDismissStatus(message, setMessage);
 
+  // Restores the active pasted text material when returning to this page.
   useEffect(() => {
     if (!documentId) {
       return undefined;
@@ -1447,6 +1495,7 @@ function UploadTextPage() {
     return () => controller.abort();
   }, [documentId]);
 
+  // Saves pasted text first, then asks the chosen AI endpoint to generate output.
   async function handleGenerate(action) {
     if (!studyText.trim()) {
       setMessage({ status: "error", message: "Please paste study material first." });
@@ -1527,6 +1576,7 @@ function UploadTextPage() {
     }
   }
 
+  // Opens confirmation before clearing non-empty pasted material.
   function handleClearRequest() {
     if (!title.trim() && !studyText.trim()) {
       return;
@@ -1535,6 +1585,7 @@ function UploadTextPage() {
     setClearConfirmOpen(true);
   }
 
+  // Clears local text state and removes the active material pointer.
   function handleClearForm() {
     setTitle("");
     setStudyText("");
@@ -1647,6 +1698,7 @@ function UploadTextPage() {
   );
 }
 
+// Manages subject folders, PDFs, and selected-document AI generation.
 function LibraryPage() {
   const [folders, setFolders] = useState([]);
   const [reviewFolderCards, setReviewFolderCards] = useState([]);
@@ -1666,10 +1718,12 @@ function LibraryPage() {
   const fileInputRef = useRef(null);
   useAutoDismissMessage(message, setMessage);
 
+  // Loads folder cards when the Library page opens.
   useEffect(() => {
     loadFolders();
   }, []);
 
+  // Loads Library folders and review counts used by the folder cards.
   async function loadFolders() {
     try {
       setStatus("loading");
@@ -1692,6 +1746,7 @@ function LibraryPage() {
     }
   }
 
+  // Opens one folder and loads only its PDFs from the backend.
   async function openFolder(folder) {
     try {
       setSelectedFolder(folder);
@@ -1714,11 +1769,13 @@ function LibraryPage() {
     }
   }
 
+  // Prepares the folder modal for creating a new folder.
   function createFolder() {
     setFolderModal({ mode: "create", folder: null });
     setFolderModalError("");
   }
 
+  // Prepares the folder modal with the selected folder name.
   function renameFolder(folder) {
     setFolderModal({ mode: "rename", folder });
     setFolderModalError("");
@@ -1733,6 +1790,7 @@ function LibraryPage() {
     setFolderModalError("");
   }
 
+  // Saves a new folder or renamed folder through the folder API.
   async function submitFolderModal(name) {
     const cleanName = name.trim();
 
@@ -1778,6 +1836,7 @@ function LibraryPage() {
     }
   }
 
+  // Deletes an empty folder after confirmation.
   async function deleteFolder(folder) {
     const shouldDelete = window.confirm(`Delete "${folder.name}"? Folders with PDFs cannot be deleted.`);
 
@@ -1809,6 +1868,7 @@ function LibraryPage() {
     }
   }
 
+  // Uploads selected PDFs into the currently open folder.
   async function uploadFiles(files) {
     if (!selectedFolder) {
       setMessage({ type: "error", text: "Open a folder before uploading PDFs." });
@@ -1856,11 +1916,13 @@ function LibraryPage() {
     }
   }
 
+  // Handles the hidden file input used by the Library upload button.
   async function handlePdfUpload(event) {
     await uploadFiles(event.target.files);
     event.target.value = "";
   }
 
+  // Moves selected PDFs to another folder and refreshes the Library data.
   async function moveDocuments(documentIds, destinationFolderId = moveTargetId) {
     if (!documentIds.length) {
       setMessage({ type: "error", text: "Select at least one PDF to move." });
@@ -1892,6 +1954,7 @@ function LibraryPage() {
     }
   }
 
+  // Renames one PDF and updates the visible table row.
   async function renameDocument(documentToRename, displayName) {
     const cleanName = normalizeDisplayFileName(displayName);
 
@@ -1932,6 +1995,7 @@ function LibraryPage() {
     return renamedDocument;
   }
 
+  // Deletes selected PDFs and refreshes the folder table.
   async function deleteDocuments(documentIds) {
     if (!documentIds.length) {
       setMessage({ type: "error", text: "Select at least one PDF to delete." });
@@ -1964,6 +2028,7 @@ function LibraryPage() {
     }
   }
 
+  // Sends the selected PDF ids to the backend for summary, quiz, or flashcard generation.
   async function generateFromSelected(type) {
     if (!selectedDocumentIds.length) {
       setMessage({ type: "error", text: "Select at least one PDF first." });
@@ -2083,6 +2148,7 @@ function LibraryPage() {
         </div>
       )}
 
+      {/* Shows folder details after a folder is opened, otherwise shows the folder grid. */}
       {selectedFolder ? (
         <FolderDetailView
           documents={folderDocuments}
@@ -2141,12 +2207,14 @@ function LibraryPage() {
   );
 }
 
+// Modal shared by create-folder and rename-folder flows.
 function FolderNameModal({ error, initialName = "", mode, onClose, onSubmit, status }) {
   const [name, setName] = useState(initialName);
   const inputRef = useRef(null);
   const isRename = mode === "rename";
   const isLoading = status === "loading";
 
+  // Focuses the folder name field and lets Escape close the modal.
   useEffect(() => {
     const timer = window.setTimeout(() => inputRef.current?.focus(), 80);
 
@@ -2164,6 +2232,7 @@ function FolderNameModal({ error, initialName = "", mode, onClose, onSubmit, sta
     };
   }, [onClose]);
 
+  // Sends the typed folder name back to LibraryPage.
   function handleSubmit(event) {
     event.preventDefault();
     onSubmit(name);
@@ -2211,6 +2280,7 @@ function FolderNameModal({ error, initialName = "", mode, onClose, onSubmit, sta
   );
 }
 
+// Loads saved-summary and marked-question counts shown on Library folder cards.
 async function loadReviewFolderCards() {
   const [summaryResponse, questionResponse] = await Promise.all([
     fetch("/api/review/summaries"),
@@ -2232,6 +2302,7 @@ async function loadReviewFolderCards() {
   return buildReviewFolderCards(summaryData.folders || [], questionData.folders || []);
 }
 
+// Finds review counts for one folder, or returns zero counts.
 function getFolderReviewInfo(reviewFolderCards, folder) {
   return reviewFolderCards.find((item) => item.folderId === folder.id) || {
     folderId: folder.id,
@@ -2241,6 +2312,7 @@ function getFolderReviewInfo(reviewFolderCards, folder) {
   };
 }
 
+// Links a folder to the Review Center when it has saved content.
 function ReviewContentLink({ folder, reviewInfo, className = "" }) {
   const reviewCount = (reviewInfo?.savedSummaryCount || 0) + (reviewInfo?.markedQuestionCount || 0);
   const isDisabled = reviewCount === 0;
@@ -2273,6 +2345,7 @@ function ReviewContentLink({ folder, reviewInfo, className = "" }) {
   );
 }
 
+// Shows the top-level Library folder cards.
 function FolderGrid({ folders, onDelete, onOpen, onRename, reviewFolderCards, status }) {
   if (status === "loading") {
     return (
@@ -2355,6 +2428,7 @@ function FolderGrid({ folders, onDelete, onOpen, onRename, reviewFolderCards, st
   );
 }
 
+// Shows PDFs inside one folder and exposes upload, select, move, delete, and AI actions.
 function FolderDetailView({
   aiAction,
   documents,
@@ -2387,6 +2461,7 @@ function FolderDetailView({
   const destinationFolders = folders.filter((item) => item.id !== folder.id);
   const reviewInfo = getFolderReviewInfo(reviewFolderCards, folder);
 
+  // Adds or removes one PDF from the selected document list.
   function toggleDocument(id) {
     onSelectDocuments(
       selectedDocumentIds.includes(id)
@@ -2395,10 +2470,12 @@ function FolderDetailView({
     );
   }
 
+  // Selects all folder PDFs, or clears the selection if all are selected.
   function toggleAll() {
     onSelectDocuments(allSelected ? [] : selectableDocuments);
   }
 
+  // Lets clicking a table row toggle selection without stealing clicks from controls.
   function handleRowClick(event, id) {
     if (event.target.closest("a, button, input, select")) {
       return;
@@ -2407,6 +2484,7 @@ function FolderDetailView({
     toggleDocument(id);
   }
 
+  // Lets keyboard users select rows with Enter or Space.
   function handleRowKeyDown(event, id) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -2414,11 +2492,13 @@ function FolderDetailView({
     }
   }
 
+  // Sends dropped PDF files through the same upload flow as the file input.
   function handleDrop(event) {
     event.preventDefault();
     onUploadFiles(event.dataTransfer.files);
   }
 
+  // Opens the inline rename editor for one PDF row.
   function startRename(documentToRename) {
     setRenamingDocumentId(documentToRename.documentId);
     setRenameValue(normalizeDisplayFileName(documentToRename.displayName || documentToRename.fileName || documentToRename.title));
@@ -2432,6 +2512,7 @@ function FolderDetailView({
     setRenameSaving(false);
   }
 
+  // Validates and saves the inline PDF rename.
   async function saveRename(documentToRename) {
     const cleanName = normalizeDisplayFileName(renameValue);
     const currentName = normalizeDisplayFileName(documentToRename.displayName || documentToRename.fileName || documentToRename.title);
@@ -2462,6 +2543,7 @@ function FolderDetailView({
     }
   }
 
+  // Saves or cancels inline rename from the keyboard.
   function handleRenameKeyDown(event, documentToRename) {
     event.stopPropagation();
 
@@ -2722,6 +2804,7 @@ function FolderDetailView({
   );
 }
 
+// Review Center lists saved summaries and marked quiz questions by folder.
 function ReviewPage() {
   const requestedReviewTab = getHashParams().get("tab") === "questions" ? "questions" : "summaries";
   const requestedFolderId = getHashParams().get("folderId") || "";
@@ -2734,10 +2817,12 @@ function ReviewPage() {
   const [activeTab, setActiveTab] = useState(requestedReviewTab);
   useAutoDismissMessage(message, setMessage);
 
+  // Loads Review Center data when the page opens.
   useEffect(() => {
     loadReviewData();
   }, []);
 
+  // Loads saved summaries and marked questions in parallel.
   async function loadReviewData() {
     try {
       setStatus("loading");
@@ -2767,14 +2852,17 @@ function ReviewPage() {
     }
   }
 
+  // Removes one saved summary from Review Center.
   async function removeSavedSummary(id) {
     await removeReviewItem(`/api/review/summaries/${id}`, "Saved summary removed.");
   }
 
+  // Removes one marked question from Review Center.
   async function removeMarkedQuestion(id) {
     await removeReviewItem(`/api/review/questions/${id}`, "Marked question removed.");
   }
 
+  // Deletes one review item, then reloads grouped review data.
   async function removeReviewItem(endpoint, fallbackMessage) {
     try {
       const response = await fetch(endpoint, { method: "DELETE" });
@@ -2796,6 +2884,7 @@ function ReviewPage() {
     [summaryGroups, questionGroups]
   );
 
+  // Opens the requested folder when Library links into Review Center.
   useEffect(() => {
     if (status !== "success" || !requestedFolderId) {
       return;
@@ -2815,6 +2904,7 @@ function ReviewPage() {
     }
   }, [folderCards, requestedFolderId, requestedFolderName, requestedReviewTab, selectedFolder?.key, status]);
 
+  // Derives the selected folder's saved summaries and marked questions for the active tab.
   const currentFolder = selectedFolder
     ? folderCards.find((folder) => folder.key === selectedFolder.key) || selectedFolder
     : null;
@@ -2980,6 +3070,7 @@ function ReviewPage() {
   );
 }
 
+// Displays a protected PDF in a modal using PDF.js.
 function PdfViewerModal({ document, onClose }) {
   const [pdfDocument, setPdfDocument] = useState(null);
   const [status, setStatus] = useState("loading");
@@ -2992,6 +3083,7 @@ function PdfViewerModal({ document, onClose }) {
   const pdfUrl = document.pdfUrl || (documentId ? `/api/documents/${documentId}/pdf` : "");
   const downloadUrl = pdfUrl ? `${pdfUrl}?download=1` : "#";
 
+  // Loads the selected PDF from the backend-owned document URL.
   useEffect(() => {
     let cancelled = false;
     let loadingTask;
@@ -3045,6 +3137,7 @@ function PdfViewerModal({ document, onClose }) {
     };
   }, [document, documentId, pdfUrl]);
 
+  // Lets Escape close the PDF modal.
   useEffect(() => {
     function handleKeydown(event) {
       if (event.key === "Escape") {
@@ -3056,12 +3149,14 @@ function PdfViewerModal({ document, onClose }) {
     return () => window.removeEventListener("keydown", handleKeydown);
   }, [onClose]);
 
+  // Scrolls to a specific PDF page while keeping the page number valid.
   function goToPage(pageNumber) {
     const nextPage = Math.min(Math.max(pageNumber, 1), pdfDocument?.numPages || 1);
     setCurrentPage(nextPage);
     pageRefs.current[nextPage - 1]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // Updates the current page indicator based on scroll position.
   function handleScroll() {
     if (!viewerRef.current || !pdfDocument) {
       return;
@@ -3151,10 +3246,12 @@ function PdfViewerModal({ document, onClose }) {
   );
 }
 
+// Renders one PDF page to canvas for the PDF viewer.
 function PdfCanvasPage({ pdfDocument, pageNumber, scale }) {
   const canvasRef = useRef(null);
   const [renderError, setRenderError] = useState("");
 
+  // Re-renders the canvas when the page or zoom level changes.
   useEffect(() => {
     let cancelled = false;
     let renderTask;
@@ -3205,6 +3302,7 @@ function PdfCanvasPage({ pdfDocument, pageNumber, scale }) {
   );
 }
 
+// Personal notes page for creating, editing, deleting, and exporting revision notes.
 function NotesPage() {
   const [notes, setNotes] = useState([]);
   const [selectedNote, setSelectedNote] = useState(null);
@@ -3215,6 +3313,7 @@ function NotesPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   useAutoDismissStatus(message, setMessage);
 
+  // Loads the user's saved notes when the Notes page opens.
   useEffect(() => {
     const controller = new AbortController();
 
@@ -3244,6 +3343,7 @@ function NotesPage() {
     return () => controller.abort();
   }, []);
 
+  // Creates a blank note, then opens it in edit mode.
   async function handleCreateNote() {
     try {
       setMessage({ status: "loading", message: "Creating note..." });
@@ -3282,6 +3382,7 @@ function NotesPage() {
     setMode("edit");
   }
 
+  // Saves title and content changes for the selected note.
   async function handleSaveNote() {
     if (!selectedNote?.id) {
       return;
@@ -3309,6 +3410,7 @@ function NotesPage() {
     }
   }
 
+  // Deletes the selected note after confirmation.
   async function handleDeleteNote() {
     if (!selectedNote?.id) {
       return;
@@ -3333,6 +3435,7 @@ function NotesPage() {
     }
   }
 
+  // Exports the selected note as a local PDF file.
   function handleExportNotePdf() {
     if (!selectedNote) {
       return;
@@ -3477,6 +3580,7 @@ function NotesPage() {
   );
 }
 
+// Loads and manages AI summaries, summary actions, exports, and AI tutor chat.
 function SummaryPage() {
   const documentId = getHashParams().get("documentId");
   const [summaryData, setSummaryData] = useState(null);
@@ -3527,6 +3631,7 @@ function SummaryPage() {
   useAutoDismissStatus(saveSummaryState, setSaveSummaryState);
   useAutoDismissStatus(copySummaryState, setCopySummaryState);
 
+  // Loads the selected summary whenever the document id or length changes.
   useEffect(() => {
     const controller = new AbortController();
 
@@ -3573,6 +3678,7 @@ function SummaryPage() {
     return () => controller.abort();
   }, [length, documentId]);
 
+  // Resets AI Tutor chat when the user switches documents.
   useEffect(() => {
     setChatMessages([]);
     setChatInput("");
@@ -3580,6 +3686,7 @@ function SummaryPage() {
     setChatError("");
   }, [documentId]);
 
+  // Keeps text-generated material available to Quiz and Flashcards navigation.
   useEffect(() => {
     if (!summaryData?.document?.id) {
       return;
@@ -3590,6 +3697,7 @@ function SummaryPage() {
     );
   }, [summaryData?.document?.id, summaryData?.document?.fileType]);
 
+  // Closes the PDF export menu when the user clicks outside it.
   useEffect(() => {
     function handleClickOutside(event) {
       if (pdfMenuRef.current && !pdfMenuRef.current.contains(event.target)) {
@@ -3604,6 +3712,7 @@ function SummaryPage() {
     };
   }, []);
 
+  // Checks whether this summary is already saved in Review Center.
   useEffect(() => {
     if (!summaryData?.document?.id || !summaryData?.summary) {
       setSavedSummary(null);
@@ -3644,6 +3753,7 @@ function SummaryPage() {
     };
   }, [summaryData?.document?.id, summaryData?.summary?.id, length]);
 
+  // Regenerates the current summary length for the open document.
   async function handleGenerate() {
     try {
       setIsRegenerating(true);
@@ -3674,6 +3784,7 @@ function SummaryPage() {
     }
   }
 
+  // Generates a quiz from the current summary source and opens the quiz page.
   async function handleGenerateQuiz(event) {
     event.preventDefault();
 
@@ -3710,6 +3821,7 @@ function SummaryPage() {
     }
   }
 
+  // Generates flashcards from the current summary source and opens the deck.
   async function handleGenerateFlashcards(event) {
     event.preventDefault();
 
@@ -3745,6 +3857,7 @@ function SummaryPage() {
     }
   }
 
+  // Requests AI-formatted notes, then downloads them as a PDF.
   async function handleDownloadPdf(pdfType) {
     try {
       const selectedPdfType = pdfType === "quick" ? "quick" : "detailed";
@@ -3805,6 +3918,7 @@ function SummaryPage() {
     }
   }
 
+  // Toggles the current summary in the Review Center.
   async function handleSaveSummaryForReview() {
     if (summaryData?.document?.fileType === "text") {
       return;
@@ -3856,6 +3970,7 @@ function SummaryPage() {
     }
   }
 
+  // Deletes the stored summary and clears summary-specific UI state.
   async function handleDeleteSummary() {
     if (!summaryData?.summary?.id) {
       return;
@@ -3891,6 +4006,7 @@ function SummaryPage() {
     }
   }
 
+  // Sends the user's AI Tutor message with recent chat history.
   async function sendChatMessage(messageOverride = "") {
     const message = String(messageOverride || chatInput).replace(/\s+/g, " ").trim();
 
@@ -3951,6 +4067,7 @@ function SummaryPage() {
     }
   }
 
+  // Sends an important question directly into AI Tutor.
   function handleQuestionToChat(question) {
     setIsChatExpanded(true);
     setChatInput(question);
@@ -3959,6 +4076,7 @@ function SummaryPage() {
     }, 180);
   }
 
+  // Reuses an AI Tutor answer to ask for a shorter, exam, flashcard, or quiz version.
   function handleChatTransform(content, action) {
     const prompts = {
       shorter: `Make this answer shorter while keeping the key study points:\n\n${content}`,
@@ -3991,6 +4109,7 @@ function SummaryPage() {
     );
   }
 
+  // Copies the current summary in a clean notes-friendly format.
   async function handleCopySummary() {
     const currentSummaryText = summaryData?.summary?.content?.[length]
       || summaryData?.summary?.displayedContent
@@ -4364,6 +4483,7 @@ function SummaryPage() {
   );
 }
 
+// Displays summary text as readable titled sections.
 function SummarySections({ text, length }) {
   const sections = buildSummaryDisplaySections(text, length);
 
@@ -4379,6 +4499,7 @@ function SummarySections({ text, length }) {
   );
 }
 
+// Shared confirmation dialog for delete, clear, remove, and retake flows.
 function ConfirmationModal({
   confirmClassName = "danger",
   confirmLabel = "Delete",
@@ -4388,6 +4509,7 @@ function ConfirmationModal({
   onConfirm,
   title
 }) {
+  // Lets Escape cancel the modal when no confirm action is running.
   useEffect(() => {
     function handleKeydown(event) {
       if (event.key === "Escape" && !isConfirming) {
@@ -4428,6 +4550,7 @@ function ConfirmationModal({
   );
 }
 
+// AI Tutor chat shown inside the Summary page.
 function StudyAssistantChat({
   documentName,
   error,
@@ -4452,6 +4575,7 @@ function StudyAssistantChat({
     "Summarize memory management in simple words."
   ];
 
+  // Restores the previous scroll position when switching compact/expanded chat.
   useEffect(() => {
     const historyNode = historyRef.current;
 
@@ -4466,6 +4590,7 @@ function StudyAssistantChat({
     });
   }, [isExpanded]);
 
+  // Keeps the latest chat message visible.
   useEffect(() => {
     const historyNode = historyRef.current;
 
@@ -4479,17 +4604,20 @@ function StudyAssistantChat({
     });
   }, [messages, status]);
 
+  // Saves chat scroll position separately for compact and expanded modes.
   function handleHistoryScroll(event) {
     if (scrollPositions?.current) {
       scrollPositions.current[scrollKey] = event.currentTarget.scrollTop;
     }
   }
 
+  // Sends the typed chat prompt.
   function handleSubmit(event) {
     event.preventDefault();
     onSend();
   }
 
+  // Sends on Enter while allowing Shift+Enter for a new line.
   function handleInputKeyDown(event) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -4609,6 +4737,7 @@ function StudyAssistantChat({
   return content;
 }
 
+// Labels whether an AI Tutor answer came from notes, summary, or general knowledge.
 function formatSourceType(sourceType) {
   if (sourceType === "general") {
     return "🌐 General Knowledge";
@@ -4621,6 +4750,7 @@ function formatSourceType(sourceType) {
   return "📄 From Your Notes";
 }
 
+// Loads quizzes, manages answers, submits attempts, and handles review marks.
 function QuizPage() {
   const params = getHashParams();
   const documentId = params.get("documentId");
@@ -4641,6 +4771,7 @@ function QuizPage() {
   const [retakeConfirmOpen, setRetakeConfirmOpen] = useState(false);
   useAutoDismissStatus(deleteState, setDeleteState);
 
+  // Keeps text-generated material available to related study pages.
   useEffect(() => {
     if (!quizData?.document?.id) {
       return;
@@ -4651,6 +4782,7 @@ function QuizPage() {
     );
   }, [quizData?.document?.id, quizData?.document?.fileType]);
 
+  // Loads the current quiz for the selected document.
   useEffect(() => {
     const controller = new AbortController();
 
@@ -4685,6 +4817,7 @@ function QuizPage() {
     return () => controller.abort();
   }, [documentId]);
 
+  // Loads questions already marked for Review Center.
   useEffect(() => {
     if (!quizData?.quiz) {
       setMarkedQuestions({});
@@ -4731,6 +4864,7 @@ function QuizPage() {
     };
   }, [quizData?.quiz?.id]);
 
+  // Restores saved results for review mode or resets state for retake mode.
   useEffect(() => {
     if (!quizData?.quiz?.id) {
       return;
@@ -4757,6 +4891,7 @@ function QuizPage() {
     }
   }, [quizData?.quiz?.id]);
 
+  // Generates a fresh quiz from the selected study material.
   async function handleGenerateQuiz() {
     try {
       setIsGenerating(true);
@@ -4790,6 +4925,7 @@ function QuizPage() {
     }
   }
 
+  // Sends selected answers to the backend and stores the result for review.
   async function handleSubmitAttempt() {
     if (!quizData?.quiz) {
       return;
@@ -4834,6 +4970,7 @@ function QuizPage() {
     }
   }
 
+  // Clears answers and score state for a new attempt.
   function resetQuizAttempt({ clearMarked = false } = {}) {
     setAnswers({});
     setAttemptResult(null);
@@ -4844,6 +4981,7 @@ function QuizPage() {
     }
   }
 
+  // Adds or removes one quiz question from Review Center.
   async function toggleMarkedQuestion(question, questionIndex) {
     if (!quizData?.quiz || !question?.id) {
       return;
@@ -4895,6 +5033,7 @@ function QuizPage() {
     }
   }
 
+  // Deletes the current generated quiz without deleting the source material.
   async function handleDeleteQuiz() {
     if (!quizData?.quiz?.id) {
       return;
@@ -4933,6 +5072,7 @@ function QuizPage() {
     }
   }
 
+  // Calculates quiz completion state for submit and progress labels.
   const quiz = quizData?.quiz;
   const allAnswered = Boolean(quiz) && quiz.questions.every((_, index) => Number.isInteger(answers[index]));
   const questionCount = quiz?.questions?.length || 0;
@@ -5153,6 +5293,7 @@ function QuizPage() {
   );
 }
 
+// Shows a submitted quiz attempt with filters, explanations, and AI insight.
 function QuizResultsPage() {
   const params = getHashParams();
   const quizId = params.get("quizId");
@@ -5164,17 +5305,20 @@ function QuizResultsPage() {
   const result = quizId ? readQuizResult(quizId) : null;
   const displayedInsight = insightStatus === "fallback" ? QUIZ_INSIGHT_FALLBACK : insight;
 
+  // Scrolls to the top when opening a new quiz result.
   useEffect(() => {
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     });
   }, [quizId]);
 
+  // Resets local insight state when the result changes.
   useEffect(() => {
     setInsight(result?.aiInsightGenerated ? result.aiInsight || "" : "");
     setInsightStatus("idle");
   }, [result?.quizId]);
 
+  // Generates the AI performance insight once per stored result.
   useEffect(() => {
     if (!result || result.aiInsightGenerated) {
       return undefined;
@@ -5270,6 +5414,7 @@ function QuizResultsPage() {
   const filteredAnswers = result.answers.filter((answer) => filter === "all" || answer.status === filter);
   const scoreBand = getScoreBand(result.scorePercentage);
 
+  // Expands or collapses one result explanation.
   function toggleQuestion(questionId) {
     setExpandedQuestions((current) => ({
       ...current,
@@ -5421,6 +5566,7 @@ function QuizResultsPage() {
   );
 }
 
+// Loads flashcard decks, tracks card review progress, and handles deck actions.
 function FlashcardsPage() {
   const params = getHashParams();
   const documentId = params.get("documentId");
@@ -5443,6 +5589,7 @@ function FlashcardsPage() {
   activeFlashcardSetIdRef.current = deckData?.flashcardSet?.id || "";
   useAutoDismissStatus(deleteState, setDeleteState);
 
+  // Keeps text-generated material available to related study pages.
   useEffect(() => {
     if (!deckData?.document?.id) {
       return;
@@ -5453,6 +5600,7 @@ function FlashcardsPage() {
     );
   }, [deckData?.document?.id, deckData?.document?.fileType]);
 
+  // Clears the saved-progress indicator after it is shown.
   useEffect(() => {
     if (savingState !== "saved") {
       return undefined;
@@ -5465,6 +5613,7 @@ function FlashcardsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [savingState]);
 
+  // Loads an existing deck and progress for the selected document or set.
   useEffect(() => {
     const controller = new AbortController();
 
@@ -5513,6 +5662,7 @@ function FlashcardsPage() {
     return () => controller.abort();
   }, [documentId, setId]);
 
+  // Generates a new flashcard deck from the current document selection.
   async function handleGenerateFlashcards() {
     if (isGenerating) {
       return;
@@ -5559,6 +5709,7 @@ function FlashcardsPage() {
     }
   }
 
+  // Saves the current card index and rating to the backend.
   async function saveProgress(nextIndex, rating = "") {
     if (!deckData?.flashcardSet) {
       return;
@@ -5599,6 +5750,7 @@ function FlashcardsPage() {
     }
   }
 
+  // Moves between cards while preserving the latest rating when needed.
   function goToCard(nextIndex) {
     const count = deckData?.flashcardSet?.cards?.length || 0;
 
@@ -5619,6 +5771,7 @@ function FlashcardsPage() {
     saveProgress(safeIndex, nextIndex > currentIndex ? existingRating || "got-it" : "");
   }
 
+  // Handles Got It or Didn't Know and advances the deck.
   function handleReview(rating) {
     const count = deckData?.flashcardSet?.cards?.length || 0;
     const nextIndex = Math.min(count - 1, currentIndex + 1);
@@ -5635,6 +5788,7 @@ function FlashcardsPage() {
     }
   }
 
+  // Restarts the deck from the first card.
   function restartDeck() {
     setCurrentIndex(0);
     setDeckComplete(false);
@@ -5642,6 +5796,7 @@ function FlashcardsPage() {
     saveProgress(0);
   }
 
+  // Deletes the current flashcard deck without deleting the source material.
   async function handleDeleteFlashcards() {
     if (!deckData?.flashcardSet?.id) {
       return;
@@ -5681,6 +5836,7 @@ function FlashcardsPage() {
     }
   }
 
+  // Calculates visible flashcard progress from cards and review history.
   const deck = deckData?.flashcardSet;
   const cards = deck?.cards || [];
   const currentCard = cards[currentIndex];
@@ -5884,7 +6040,9 @@ function FlashcardsPage() {
   );
 }
 
+// Flashcard help modal that explains the review controls.
 function FlashcardGuideModal({ onClose }) {
+  // Lets Escape close the flashcard guide.
   useEffect(() => {
     function handleKeydown(event) {
       if (event.key === "Escape") {
@@ -5958,6 +6116,7 @@ function FlashcardGuideModal({ onClose }) {
   );
 }
 
+// Shows deck completion stats and next recommended study action.
 function DeckCompleteCard({ documentId, onRestart, stats }) {
   const summaryHref = `#summary?documentId=${documentId || ""}`;
   const quizHref = `#quizzes?documentId=${documentId || ""}`;
@@ -5987,6 +6146,7 @@ function DeckCompleteCard({ documentId, onRestart, stats }) {
   );
 }
 
+// Calculates mastered, learning, and readiness stats from flashcard history.
 function buildDeckCompletionStats(cardCount, reviewHistory = []) {
   const latestRatings = new Map();
 
@@ -6012,6 +6172,7 @@ function buildDeckCompletionStats(cardCount, reviewHistory = []) {
   };
 }
 
+// Finds the most recent rating for one flashcard order.
 function getLatestFlashcardRating(reviewHistory = [], cardOrder) {
   const targetOrder = Number(cardOrder);
 
@@ -6030,6 +6191,7 @@ function getLatestFlashcardRating(reviewHistory = [], cardOrder) {
   return "";
 }
 
+// Converts readiness status into a short learner-facing label.
 function getDeckReadinessLabel(status) {
   if (status === "high") {
     return "Quiz Ready";
@@ -6042,6 +6204,7 @@ function getDeckReadinessLabel(status) {
   return "More Review Recommended";
 }
 
+// Gives the learner a next-step recommendation after a deck is completed.
 function getDeckCompletionInsight(status) {
   if (status === "high") {
     return {
@@ -6069,6 +6232,7 @@ function getDeckCompletionInsight(status) {
   };
 }
 
+// Main dashboard content made from backend stats, progress, and recommendations.
 function DashboardContent({ dashboard, liveStudySeconds = 0 }) {
   const hasData = dashboard.meta?.hasData;
 
@@ -6102,6 +6266,7 @@ function DashboardContent({ dashboard, liveStudySeconds = 0 }) {
   );
 }
 
+// Shows one dashboard metric card.
 function StatCard({ icon: Icon, label, value, suffix = "", trend }) {
   const displayValue = typeof value === "number" ? `${value}${suffix}` : value;
   const trendDisplay = getTrendDisplay(trend);
@@ -6125,6 +6290,7 @@ function StatCard({ icon: Icon, label, value, suffix = "", trend }) {
   );
 }
 
+// Converts numeric trend data into display text and styling.
 function getTrendDisplay(trend) {
   if (!trend) {
     return null;
@@ -6156,6 +6322,7 @@ function getTrendDisplay(trend) {
   };
 }
 
+// Lets the user choose and save a daily study goal.
 function DailyGoalWidget({ goal, liveStudySeconds }) {
   const [goalState, setGoalState] = useState(() => normalizeGoal(goal));
   const [saveStatus, setSaveStatus] = useState("idle");
@@ -6183,10 +6350,12 @@ function DailyGoalWidget({ goal, liveStudySeconds }) {
     ? `${formatHours(actualValue / 60)} / ${formatGoalHours(goalState.targetMinutes)}`
     : `${Math.floor(actualValue)} / ${targetValue} quizzes`;
 
+  // Keeps local goal controls synced with backend goal updates.
   useEffect(() => {
     setGoalState(normalizeGoal(goal));
   }, [goal]);
 
+  // Saves the selected goal type and target to the dashboard API.
   async function saveGoal(nextGoal) {
     setGoalState((current) => ({ ...current, ...nextGoal }));
     setSaveStatus("saving");
@@ -6270,12 +6439,14 @@ function DailyGoalWidget({ goal, liveStudySeconds }) {
   );
 }
 
+// Reusable dropdown used for goals and moving PDFs between folders.
 function GoalDropdown({ className = "", disabled = false, label, options, placeholder = "", value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const selectedOption = options.find((option) => option.value === value) || null;
   const triggerLabel = selectedOption?.label || placeholder || options[0]?.label || "Select";
 
+  // Closes the dropdown when the user clicks outside it.
   useEffect(() => {
     function handlePointerDown(event) {
       if (!dropdownRef.current?.contains(event.target)) {
@@ -6287,6 +6458,7 @@ function GoalDropdown({ className = "", disabled = false, label, options, placeh
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 
+  // Applies the selected dropdown option.
   function handleSelect(option) {
     if (disabled) {
       return;
@@ -6335,6 +6507,7 @@ function GoalDropdown({ className = "", disabled = false, label, options, placeh
   );
 }
 
+// Folder-specific wrapper around the shared dropdown component.
 function MoveFolderDropdown({ disabled = false, label, onChange, options, placeholder, value }) {
   return (
     <GoalDropdown
@@ -6349,6 +6522,7 @@ function MoveFolderDropdown({ disabled = false, label, onChange, options, placeh
   );
 }
 
+// Normalizes backend goal data before rendering the goal widget.
 function normalizeGoal(goal) {
   return {
     type: goal?.type === "quiz" ? "quiz" : "studyTime",
@@ -6359,6 +6533,7 @@ function normalizeGoal(goal) {
   };
 }
 
+// Keeps numeric settings inside the allowed range.
 function clamp(value, min, max, fallback) {
   const number = Number(value);
 
@@ -6369,6 +6544,7 @@ function clamp(value, min, max, fallback) {
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
+// Formats goal minutes as a compact hour/minute label.
 function formatGoalHours(minutes) {
   if (minutes < 60) {
     return `${minutes} min`;
@@ -6377,6 +6553,7 @@ function formatGoalHours(minutes) {
   return `${formatHours(minutes / 60)} hrs`;
 }
 
+// Shows study time or quiz score progress over a selected period.
 function ProgressCard({ progress }) {
   const [activeMetric, setActiveMetric] = useState("studyTime");
   const [period, setPeriod] = useState("week");
@@ -6445,6 +6622,7 @@ function ProgressCard({ progress }) {
   );
 }
 
+// Filters chart data to this week or this month.
 function filterProgressByPeriod(chartData, period) {
   if (!chartData.length) {
     return [];
@@ -6460,6 +6638,7 @@ function filterProgressByPeriod(chartData, period) {
   });
 }
 
+// Finds Monday of the current week for dashboard filtering.
 function startOfCurrentWeek(date) {
   const start = new Date(date);
   const day = start.getDay();
@@ -6468,6 +6647,7 @@ function startOfCurrentWeek(date) {
   return start;
 }
 
+// Empty chart state used before enough activity exists.
 function StudyProgressEmptyState() {
   return (
     <div className="progress-empty-state">
@@ -6480,6 +6660,7 @@ function StudyProgressEmptyState() {
   );
 }
 
+// Small metric card under the progress chart.
 function ProgressMetricCard({ label, value }) {
   return (
     <article className="progress-metric-card">
@@ -6489,6 +6670,7 @@ function ProgressMetricCard({ label, value }) {
   );
 }
 
+// Renders the progress chart SVG for study time or quiz scores.
 function ProgressChart({ data, metric }) {
   const chart = useMemo(() => buildSingleMetricChart(data, metric), [data, metric]);
   const strokeClass = metric === "studyTime" ? "study-line" : "score-line";
@@ -6521,6 +6703,7 @@ function ProgressChart({ data, metric }) {
   );
 }
 
+// Converts dashboard progress data into chart points, labels, and path data.
 function buildSingleMetricChart(data, metric) {
   const width = 800;
   const height = 232;
@@ -6575,6 +6758,7 @@ function buildSingleMetricChart(data, metric) {
   return { path, points, yLabels, xLabels };
 }
 
+// Builds a smooth SVG path through chart points.
 function buildSmoothPath(points) {
   if (!points.length) {
     return "";
@@ -6598,6 +6782,7 @@ function buildSmoothPath(points) {
   }, "");
 }
 
+// Calculates totals and averages for the selected progress metric.
 function calculateProgressMetrics(data) {
   const studyHours = data.map((item) => (item.studyTime || 0) / 60);
   const scores = data
@@ -6611,11 +6796,14 @@ function calculateProgressMetrics(data) {
   return { totalStudyHours, averageStudyHours, averageScore, bestScore };
 }
 
+// Formats decimal hours to one place for dashboard labels.
 function formatHours(value) {
   return Number(value || 0).toFixed(1);
 }
 
+// Shows actionable dashboard insights.
 function InsightsCard({ insights }) {
+  // Scrolls to the daily goal widget when that insight is clicked.
   function handleInsightClick(event, insight) {
     if (insight.action !== "dailyGoal") {
       return;
@@ -6667,6 +6855,7 @@ function InsightsCard({ insights }) {
   );
 }
 
+// Shows recent study items and lets users hide them from the dashboard.
 function ContinueLearning({ items }) {
   const [visibleItems, setVisibleItems] = useState(items.slice(0, 3));
   const [pendingRemoveItem, setPendingRemoveItem] = useState(null);
@@ -6676,10 +6865,12 @@ function ContinueLearning({ items }) {
   });
   useAutoDismissStatus(removeState, setRemoveState);
 
+  // Refreshes the visible cards whenever dashboard data changes.
   useEffect(() => {
     setVisibleItems(items.slice(0, 3));
   }, [items]);
 
+  // Hides one continue-learning item without deleting study data.
   async function handleRemoveItem() {
     if (!pendingRemoveItem?.subject) {
       return;
@@ -6785,6 +6976,7 @@ function ContinueLearning({ items }) {
   );
 }
 
+// Empty dashboard banner shown before the user has study activity.
 function EmptyDataBanner() {
   return (
     <div className="empty-banner">
@@ -6794,6 +6986,7 @@ function EmptyDataBanner() {
   );
 }
 
+// Reusable empty state used across dashboard, Library, and study pages.
 function EmptyPanel({ title, text }) {
   return (
     <div className="empty-panel">
@@ -6803,6 +6996,7 @@ function EmptyPanel({ title, text }) {
   );
 }
 
+// Dashboard error state shown when backend loading fails.
 function ErrorState({ message }) {
   return (
     <section className="state-card">
@@ -6812,6 +7006,7 @@ function ErrorState({ message }) {
   );
 }
 
+// Skeleton layout shown while dashboard data is loading.
 function DashboardSkeleton() {
   return (
     <>
@@ -6828,6 +7023,7 @@ function DashboardSkeleton() {
   );
 }
 
+// Skeleton layout shown while summary data is loading.
 function SummarySkeleton() {
   return (
     <div className="summary-page">
@@ -6842,6 +7038,7 @@ function SummarySkeleton() {
   );
 }
 
+// Skeleton layout shown while quiz data is loading.
 function QuizSkeleton() {
   return (
     <div className="quiz-page">
@@ -6853,6 +7050,7 @@ function QuizSkeleton() {
   );
 }
 
+// Skeleton layout shown while flashcard data is loading.
 function FlashcardsSkeleton() {
   return (
     <div className="flashcards-page">
@@ -6863,6 +7061,7 @@ function FlashcardsSkeleton() {
   );
 }
 
+// Formats dates for document upload and summary metadata.
 function formatDate(date) {
   if (!date) {
     return "2 Jun 2024";
@@ -6875,6 +7074,7 @@ function formatDate(date) {
   });
 }
 
+// Formats completed quiz timestamps.
 function formatDateTime(date) {
   if (!date) {
     return "Recently";
@@ -6889,6 +7089,7 @@ function formatDateTime(date) {
   });
 }
 
+// Formats quiz attempt duration.
 function formatDuration(seconds) {
   const totalSeconds = Math.max(0, Number(seconds || 0));
   const minutes = Math.floor(totalSeconds / 60);
@@ -6901,6 +7102,7 @@ function formatDuration(seconds) {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
+// Chooses a score band used by quiz result styling.
 function getScoreBand(score) {
   const value = Number(score || 0);
 
@@ -6915,6 +7117,7 @@ function getScoreBand(score) {
   return "high";
 }
 
+// Formats recent activity labels like updated just now.
 function formatRelativeTimestamp(date) {
   if (!date) {
     return "Updated recently";
@@ -6935,10 +7138,12 @@ function formatRelativeTimestamp(date) {
   return `Updated ${days}d ago`;
 }
 
+// Formats uploaded document types for display.
 function formatFileType(fileType) {
   return (fileType || "PDF").toUpperCase();
 }
 
+// Formats file sizes in KB or MB for Library tables.
 function formatFileSize(bytes) {
   const value = Number(bytes || 0);
 
@@ -6953,6 +7158,7 @@ function formatFileSize(bytes) {
   return `${(value / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
 }
 
+// Cleans PDF display names before showing or saving them.
 function normalizeDisplayFileName(value) {
   return String(value || "")
     .replace(/\.pdf$/i, "")
@@ -6960,10 +7166,12 @@ function normalizeDisplayFileName(value) {
     .trim();
 }
 
+// Builds the localStorage key for one quiz result.
 function quizResultStorageKey(quizId) {
   return `studymind:quiz-result:${quizId}`;
 }
 
+// Stores submitted quiz results so the review page can open instantly.
 function saveQuizResult(result) {
   try {
     localStorage.setItem(quizResultStorageKey(result.quizId), JSON.stringify(result));
@@ -6972,6 +7180,7 @@ function saveQuizResult(result) {
   }
 }
 
+// Reads a submitted quiz result from localStorage.
 function readQuizResult(quizId) {
   try {
     const raw = localStorage.getItem(quizResultStorageKey(quizId));
@@ -6981,6 +7190,7 @@ function readQuizResult(quizId) {
   }
 }
 
+// Rebuilds selected answer state from a stored quiz result.
 function buildAnswersFromResult(result) {
   return (result?.answers || []).reduce((mapped, answer) => {
     if (Number.isInteger(answer.selectedAnswer)) {
@@ -6991,6 +7201,7 @@ function buildAnswersFromResult(result) {
   }, {});
 }
 
+// Converts a submitted attempt into the result page data shape.
 function buildQuizResultPayload({ quizData, answers, attempt, timeTakenSeconds }) {
   const quiz = quizData.quiz;
   const completedAt = attempt?.completedAt || new Date().toISOString();
@@ -7038,6 +7249,7 @@ function buildQuizResultPayload({ quizData, answers, attempt, timeTakenSeconds }
   };
 }
 
+// Builds the compact payload sent to the quiz insight endpoint.
 function buildQuizInsightRequest(result) {
   return {
     quizTitle: result.quizTitle,
@@ -7060,6 +7272,7 @@ function buildQuizInsightRequest(result) {
   };
 }
 
+// Provides a fallback quiz insight if the AI insight request fails.
 function buildQuizInsight({ scorePercentage, correctCount, incorrectCount, unansweredCount, totalQuestions }) {
   if (!totalQuestions) {
     return "Review the questions answered incorrectly and revisit the related sections in your notes.";
@@ -7080,6 +7293,7 @@ function buildQuizInsight({ scorePercentage, correctCount, incorrectCount, unans
   return `Your score shows that this quiz needs more revision. Start by reviewing the incorrect and unanswered questions below, then retake the quiz after revisiting the related notes. Focus on understanding why each correct answer is right rather than memorizing options.`;
 }
 
+// Combines saved-summary and marked-question groups into Review Center folder cards.
 function buildReviewFolderCards(summaryGroups, questionGroups) {
   const folders = new Map();
 
@@ -7114,11 +7328,13 @@ function buildReviewFolderCards(summaryGroups, questionGroups) {
   return [...folders.values()].sort((a, b) => a.folderName.localeCompare(b.folderName));
 }
 
+// Finds the saved items for one Review Center folder.
 function findReviewGroup(groups, folderKey, itemKey) {
   const group = groups.find((item) => (item.folderId || "uncategorized") === folderKey);
   return group?.[itemKey] || [];
 }
 
+// Formats a selected quiz option for result review.
 function formatQuizAnswer(options = [], index) {
   if (!Number.isInteger(index) || index < 0 || index >= options.length) {
     return "Not answered";
@@ -7127,10 +7343,12 @@ function formatQuizAnswer(options = [], index) {
   return `${String.fromCharCode(65 + index)}. ${options[index]}`;
 }
 
+// Capitalizes short labels used in tabs and badges.
 function capitalize(value) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+// Splits raw summary text into titled sections for display.
 function splitSummaryIntoSections(text, length) {
   const cleanText = stripMarkdownArtifacts(text);
   const structuredSections = parseTopicSections(cleanText);
@@ -7169,6 +7387,7 @@ function splitSummaryIntoSections(text, length) {
   }));
 }
 
+// Reads AI output that already uses heading: paragraph structure.
 function parseTopicSections(text) {
   const normalized = stripMarkdownArtifacts(text)
     .replace(/\r\n/g, "\n")
@@ -7189,6 +7408,7 @@ function parseTopicSections(text) {
     .filter((section) => section.title && section.text);
 }
 
+// Cleans one summary sentence before showing it in a card or PDF.
 function cleanDisplaySentence(sentence) {
   return stripMarkdownArtifacts(sentence)
     .replace(/[•●○▪▫]/g, "")
@@ -7199,6 +7419,7 @@ function cleanDisplaySentence(sentence) {
     .trim();
 }
 
+// Builds a useful section title from the section text.
 function buildTopicTitle(text, index) {
   const cleaned = cleanDisplaySentence(text);
   const rawTitle = findBestTopicPhrase(cleaned);
@@ -7206,6 +7427,7 @@ function buildTopicTitle(text, index) {
   return cleanTopicTitle(rawTitle, index, cleaned);
 }
 
+// Cleans AI headings and falls back when the heading is vague.
 function cleanTopicTitle(title, index = 0, sectionText = "") {
   const cleaned = stripMarkdownArtifacts(title)
     .replace(/^\s*[-–—:;,.]+/, "")
@@ -7224,6 +7446,7 @@ function cleanTopicTitle(title, index = 0, sectionText = "") {
   return toTitleCase(cleaned.split(/\s+/).slice(0, 8).join(" "));
 }
 
+// Builds final summary sections for short, medium, or detailed display.
 function buildSummaryDisplaySections(text, length) {
   const sections = splitSummaryIntoSections(text, length);
 
@@ -7252,6 +7475,7 @@ function buildSummaryDisplaySections(text, length) {
   );
 }
 
+// Makes sure summary cards start with an overview section.
 function ensureOverviewFirst(sections, maximumCount) {
   if (!sections.length) {
     return sections;
@@ -7274,6 +7498,7 @@ function ensureOverviewFirst(sections, maximumCount) {
     : normalizedSections;
 }
 
+// Picks the strongest sentences to create an overview.
 function buildDocumentOverview(sections) {
   const sentences = sections.flatMap((section, sectionIndex) => (
     splitCompactSummarySentences(section.text).map((sentence, sentenceIndex) => ({
@@ -7291,6 +7516,7 @@ function buildDocumentOverview(sections) {
   return selected.join(" ") || sections[0]?.text || "";
 }
 
+// Scores sentences that work well as an overview.
 function scoreOverviewSentence(sentence, sectionIndex) {
   const text = String(sentence || "");
   let score = sectionIndex === 0 ? 1 : 0;
@@ -7310,6 +7536,7 @@ function scoreOverviewSentence(sentence, sectionIndex) {
   return score;
 }
 
+// Formats summary text before copying it to the clipboard.
 function formatSummaryForClipboard(title, text, length) {
   const hasBulletLines = /(?:^|\n)\s*[-*+•]\s+\S/m.test(String(text || ""));
   const rawLines = String(text || "").replace(/\r\n/g, "\n").split(/\n+/);
@@ -7349,6 +7576,7 @@ function formatSummaryForClipboard(title, text, length) {
   return `${stripMarkdownArtifacts(title).toUpperCase()}\n\n${content}`.trim();
 }
 
+// Removes markdown from copied summary text.
 function cleanClipboardText(text) {
   return normalizeTechnicalCapitalization(String(text || "")
     .replace(/\*\*(.*?)\*\*/g, "$1")
@@ -7359,6 +7587,7 @@ function cleanClipboardText(text) {
     .trim());
 }
 
+// Copies text using Clipboard API with a textarea fallback.
 async function copyTextToClipboard(text) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -7384,6 +7613,7 @@ async function copyTextToClipboard(text) {
   }
 }
 
+// Turns compact summary text into clean paragraph form.
 function normalizeCompactSummaryParagraph(text) {
   const parts = stripMarkdownArtifacts(text)
     .split(/\n+|;+/)
@@ -7399,6 +7629,7 @@ function normalizeCompactSummaryParagraph(text) {
     .join(" ");
 }
 
+// Expands short AI output into multiple readable summary cards.
 function expandCompactSummarySections(sections, targetCount) {
   const sentences = sections
     .flatMap((section) => splitCompactSummarySentences(section.text))
@@ -7432,6 +7663,7 @@ function expandCompactSummarySections(sections, targetCount) {
     .filter((section) => section.text);
 }
 
+// Splits compact summary text into sentence-level chunks.
 function splitCompactSummarySentences(text) {
   return stripMarkdownArtifacts(text)
     .split(/\n+|;+\s*|(?<=[.!?])\s+(?=[A-Z0-9])/)
@@ -7439,6 +7671,7 @@ function splitCompactSummarySentences(text) {
     .filter(Boolean);
 }
 
+// Avoids duplicate section headings in generated summary cards.
 function makeUniqueSummaryTitle(title, usedTitles, index) {
   const cleaned = cleanTopicTitle(title, index);
 
@@ -7459,6 +7692,7 @@ function makeUniqueSummaryTitle(title, usedTitles, index) {
     || `Key Concept ${index + 1}`;
 }
 
+// Splits summary text into clean points for PDF export.
 function splitSummaryPoints(text) {
   const cleaned = stripMarkdownArtifacts(text);
   const points = cleaned
@@ -7469,6 +7703,7 @@ function splitSummaryPoints(text) {
   return [...new Set(points)];
 }
 
+// Removes markdown symbols so generated content displays like notes.
 function stripMarkdownArtifacts(text) {
   return normalizeTechnicalCapitalization(String(text || "")
     .replace(/```[\s\S]*?```/g, (block) => block.replace(/```[a-z]*|```/gi, ""))
@@ -7490,6 +7725,7 @@ function stripMarkdownArtifacts(text) {
     .trim());
 }
 
+// Restores common technical acronyms after cleanup.
 function normalizeTechnicalCapitalization(value) {
   const terms = [
     ["dbms", "DBMS"],
@@ -7519,6 +7755,7 @@ function normalizeTechnicalCapitalization(value) {
   ), String(value || ""));
 }
 
+// Finds a strong topic phrase to use as a section heading.
 function findBestTopicPhrase(text) {
   const cleaned = String(text || "")
     .replace(/["“”'‘’]/g, "")
@@ -7565,6 +7802,7 @@ function findBestTopicPhrase(text) {
   return best?.phrase || "";
 }
 
+// Detects common CSE topic phrases for better headings.
 function findKnownConceptPhrase(text) {
   const conceptPatterns = [
     /\bcloud service models?\b/i,
@@ -7597,6 +7835,7 @@ function findKnownConceptPhrase(text) {
   return "";
 }
 
+// Rejects vague or broken AI headings before display.
 function isBadSummaryHeading(title) {
   const normalized = String(title || "").trim().toLowerCase();
 
@@ -7625,16 +7864,19 @@ function isBadSummaryHeading(title) {
   return wordCount === 1 && !isTechnicalPhrase(normalized);
 }
 
+// Filters out words that should not anchor a heading.
 function isHeadingStopWord(word) {
   return /^(a|an|the|and|or|but|if|then|this|that|these|those|finally|here|therefore|however|moreover|furthermore|in|on|at|by|from|with|without|inside|outside|into|over|under|between|through|after|before|for|of|to|as|is|are|was|were|be|being|been|can|could|may|might|should|would|will|also|each|every|some|many|such)$/i
     .test(String(word || ""));
 }
 
+// Checks whether a phrase contains useful technical terms.
 function isTechnicalPhrase(phrase) {
   return /\b(cloud|service|deployment|model|virtualization|container|storage|security|process|thread|scheduling|algorithm|deadlock|memory|file|database|normalization|SQL|transaction|index|network|architecture|system|computing|resource|server|application|platform|infrastructure|software|data|management)\b/i
     .test(String(phrase || ""));
 }
 
+// Converts section headings into clean title case.
 function toTitleCase(value) {
   const smallWords = new Set(["and", "or", "of", "to", "in", "for", "with", "on", "the", "a", "an"]);
 
@@ -7656,6 +7898,7 @@ function toTitleCase(value) {
     .join(" ");
 }
 
+// Builds and downloads the summary PDF using jsPDF.
 function exportSummaryPdf({
   document: documentData,
   summary,
@@ -7678,6 +7921,7 @@ function exportSummaryPdf({
     .filter((section) => pdfType !== "quick" || !/important questions?|q\s*&\s*a/i.test(section.title));
   let cursorY = margin;
 
+  // Adds StudyMind branding and page numbers to each PDF page.
   function addFooter() {
     const pageCount = pdf.internal.getNumberOfPages();
 
@@ -7693,6 +7937,7 @@ function exportSummaryPdf({
     }
   }
 
+  // Starts a new page when the next block will not fit.
   function ensureSpace(heightNeeded) {
     if (cursorY + heightNeeded <= pageHeight - 64) {
       return;
@@ -7724,6 +7969,7 @@ function exportSummaryPdf({
     });
   }
 
+  // Writes wrapped text with optional justification.
   function writeWrappedText(text, options = {}) {
     const {
       fontSize = 11,
@@ -7756,6 +8002,7 @@ function exportSummaryPdf({
     return lines.length;
   }
 
+  // Writes a major PDF section heading.
   function writeSectionTitle(text) {
     ensureSpace(34);
     cursorY += 8;
@@ -7769,6 +8016,7 @@ function exportSummaryPdf({
     cursorY += 22;
   }
 
+  // Writes one note point, or a comparison row when the text is table-like.
   function writeBullet(text) {
     const cleaned = cleanDisplaySentence(text);
 
@@ -7807,6 +8055,7 @@ function exportSummaryPdf({
     cursorY += pdfType === "quick" ? 2 : 4;
   }
 
+  // Renders pipe-separated comparison points as a simple row.
   function writeComparisonRow(cells) {
     const gap = 6;
     const cellWidth = (contentWidth - gap * (cells.length - 1)) / cells.length;
@@ -7829,6 +8078,7 @@ function exportSummaryPdf({
     cursorY += rowHeight + 5;
   }
 
+  // Adds important questions and answers to detailed PDFs.
   function writeQuestionAnswer(item, index) {
     const question = cleanDisplaySentence(item?.question || item);
     const answer = cleanDisplaySentence(item?.answer || "");
@@ -7934,6 +8184,7 @@ function exportSummaryPdf({
   pdf.save(buildSummaryPdfFilename(title, pdfType));
 }
 
+// Builds and downloads a PDF version of a personal note.
 function exportNotePdf(note) {
   const pdf = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = pdf.internal.pageSize.getWidth();
@@ -7988,6 +8239,7 @@ function exportNotePdf(note) {
   pdf.save(buildNotePdfFilename(title));
 }
 
+// Normalizes AI-provided PDF sections or falls back to parsed summary text.
 function normalizePdfSections(pdfSections, summaryText, length) {
   if (Array.isArray(pdfSections) && pdfSections.length) {
     return pdfSections
@@ -8009,6 +8261,7 @@ function normalizePdfSections(pdfSections, summaryText, length) {
   }));
 }
 
+// Builds a safe file name for downloaded summary PDFs.
 function buildSummaryPdfFilename(title, pdfType = "detailed") {
   const safeTitle = String(title || "Summary")
     .replace(/[^a-z0-9]+/gi, "_")
@@ -8019,6 +8272,7 @@ function buildSummaryPdfFilename(title, pdfType = "detailed") {
   return `${safeTitle || "StudyMind"}_${suffix}.pdf`;
 }
 
+// Builds a safe file name for downloaded note PDFs.
 function buildNotePdfFilename(title) {
   const safeTitle = String(title || "Untitled Note")
     .replace(/[^a-z0-9]+/gi, "-")

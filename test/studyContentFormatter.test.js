@@ -1,3 +1,4 @@
+// Use Node's built-in test runner so formatter rules can be checked without extra tooling.
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -12,6 +13,7 @@ import {
   buildQuickRevisionPrompt
 } from "../server/services/aiService.js";
 
+// This test protects the UI from raw AI markdown leaking into study notes.
 test("sanitizes markdown artifacts and normalizes technical capitalization", () => {
   const result = sanitizeAiText("* **On-Demand Self-Service:** uses iaas, aws ec2, devops, and ci/cd.");
 
@@ -68,6 +70,7 @@ test("detailed notes retain separated questions and short answers", () => {
   );
 });
 
+// Prompt tests are important because prompt wording controls the shape of AI output.
 test("quick and detailed prompts enforce distinct output goals", () => {
   const quickPrompt = buildQuickRevisionPrompt("Source material");
   const detailedPrompt = buildDetailedNotesPrompt("Source material");

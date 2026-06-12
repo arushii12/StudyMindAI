@@ -1,5 +1,8 @@
+// Import Mongoose so this file can define application users.
 import mongoose from "mongoose";
 
+// User stores account details used for authentication and profile display.
+// passwordHash is hidden by default so normal queries do not expose it.
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -27,4 +30,5 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Export the model used by authService.
 export default mongoose.model("User", userSchema);

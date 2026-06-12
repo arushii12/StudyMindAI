@@ -1,11 +1,18 @@
+// Import Mongoose so folder ids can be validated and used in aggregations.
 import mongoose from "mongoose";
+// Folder operations require MongoDB.
 import { isDatabaseConnected } from "../config/db.js";
+// Document counts are shown on folder cards.
 import Document from "../models/Document.js";
+// Folder stores Library folders owned by each user.
 import Folder from "../models/Folder.js";
 
+// Called when the Library page needs folder cards.
+// It joins folders with document counts for the current user.
 export async function listFoldersForUser(user) {
   ensureUserAndDatabase(user);
 
+  // Aggregate folders with counts of non-archived documents inside each folder.
   const folders = await Folder.aggregate([
     { $match: { userId: userObjectId(user.id) } },
     {
@@ -49,10 +56,13 @@ export async function listFoldersForUser(user) {
   };
 }
 
+// Called when React opens one folder.
 export async function getFolderForUser(user, folderId) {
   ensureUserAndDatabase(user);
+  // Validate folderId before querying MongoDB.
   validateObjectId(folderId, "Invalid folder id.");
 
+  // Find the folder only if it belongs to this user.
   const folder = await Folder.findOne({ _id: folderId, userId: user.id }).lean();
 
   if (!folder) {
@@ -61,6 +71,7 @@ export async function getFolderForUser(user, folderId) {
     throw error;
   }
 
+  // Count documents in this folder for the folder detail header.
   const documentCount = await Document.countDocuments({
     userId: user.id,
     folderId,
@@ -72,9 +83,11 @@ export async function getFolderForUser(user, folderId) {
   };
 }
 
+// Called when the user creates a new folder.
 export async function createFolderForUser(user, payload = {}) {
   ensureUserAndDatabase(user);
 
+  // Clean the folder name before validation and duplicate checks.
   const name = cleanFolderName(payload.name);
 
   if (!name) {
@@ -84,6 +97,7 @@ export async function createFolderForUser(user, payload = {}) {
   }
 
   try {
+    // Save normalizedName so duplicate checks are case-insensitive.
     const folder = await Folder.create({
       userId: user.id,
       name,
@@ -95,6 +109,7 @@ export async function createFolderForUser(user, payload = {}) {
       message: "Folder created."
     };
   } catch (error) {
+    // MongoDB duplicate key means this user already has a folder with that name.
     if (error.code === 11000) {
       error.message = "A folder with this name already exists.";
       error.status = 409;
@@ -104,6 +119,7 @@ export async function createFolderForUser(user, payload = {}) {
   }
 }
 
+// Called when the user renames a folder.
 export async function renameFolderForUser(user, folderId, payload = {}) {
   ensureUserAndDatabase(user);
   validateObjectId(folderId, "Invalid folder id.");
@@ -117,6 +133,7 @@ export async function renameFolderForUser(user, folderId, payload = {}) {
   }
 
   try {
+    // Rename only a folder owned by this user.
     const folder = await Folder.findOneAndUpdate(
       { _id: folderId, userId: user.id },
       { name, normalizedName: normalizeFolderName(name) },
@@ -129,6 +146,7 @@ export async function renameFolderForUser(user, folderId, payload = {}) {
       throw error;
     }
 
+    // Update document folder labels so Library cards stay consistent.
     await Document.updateMany(
       { userId: user.id, folderId },
       { folderName: folder.name, subject: folder.name }
@@ -154,10 +172,12 @@ export async function renameFolderForUser(user, folderId, payload = {}) {
   }
 }
 
+// Called when the user deletes an empty folder.
 export async function deleteFolderForUser(user, folderId) {
   ensureUserAndDatabase(user);
   validateObjectId(folderId, "Invalid folder id.");
 
+  // Find the folder only if it belongs to this user.
   const folder = await Folder.findOne({ _id: folderId, userId: user.id }).lean();
 
   if (!folder) {
@@ -166,6 +186,7 @@ export async function deleteFolderForUser(user, folderId) {
     throw error;
   }
 
+  // Do not delete folders that still contain PDFs.
   const documentCount = await Document.countDocuments({
     userId: user.id,
     folderId,
@@ -178,6 +199,7 @@ export async function deleteFolderForUser(user, folderId) {
     throw error;
   }
 
+  // Delete the folder after ownership and empty-folder checks pass.
   await Folder.deleteOne({ _id: folderId, userId: user.id });
 
   return {
@@ -185,10 +207,12 @@ export async function deleteFolderForUser(user, folderId) {
   };
 }
 
+// Called when the folder detail view lists PDFs inside one folder.
 export async function listFolderDocumentsForUser(user, folderId) {
   ensureUserAndDatabase(user);
   validateObjectId(folderId, "Invalid folder id.");
 
+  // Check folder ownership before listing its documents.
   const folder = await Folder.findOne({ _id: folderId, userId: user.id }).lean();
 
   if (!folder) {
@@ -197,6 +221,7 @@ export async function listFolderDocumentsForUser(user, folderId) {
     throw error;
   }
 
+  // List only this user's non-archived documents in the folder.
   const documents = await Document.find({
     userId: user.id,
     folderId,
@@ -215,6 +240,7 @@ export async function listFolderDocumentsForUser(user, folderId) {
   };
 }
 
+// Used by upload flow to resolve an existing folder or create one by name.
 export async function resolveFolderForUpload(user, payload = {}) {
   const folderId = payload.folderId || "";
   const folderName = payload.folderName || "";
@@ -226,6 +252,7 @@ export async function resolveFolderForUpload(user, payload = {}) {
   ensureUserAndDatabase(user);
 
   if (folderId) {
+    // If React sends folderId, verify it belongs to the current user.
     validateObjectId(folderId, "Invalid folder id.");
 
     const folder = await Folder.findOne({ _id: folderId, userId: user.id }).lean();
@@ -245,6 +272,7 @@ export async function resolveFolderForUpload(user, payload = {}) {
     return null;
   }
 
+  // If React sends a new folder name, create or reuse it with an upsert.
   return Folder.findOneAndUpdate(
     { userId: user.id, normalizedName: normalizeFolderName(name) },
     { $setOnInsert: { userId: user.id, name, normalizedName: normalizeFolderName(name) } },
@@ -252,6 +280,7 @@ export async function resolveFolderForUpload(user, payload = {}) {
   ).lean();
 }
 
+// Shared guard for folder operations that require auth and MongoDB.
 function ensureUserAndDatabase(user) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Configure MONGO_URI before using folders.");
@@ -260,6 +289,7 @@ function ensureUserAndDatabase(user) {
   }
 }
 
+// Validate MongoDB ObjectIds before querying.
 function validateObjectId(id, message) {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     const error = new Error(message);
@@ -268,10 +298,12 @@ function validateObjectId(id, message) {
   }
 }
 
+// Convert a string id into ObjectId for aggregation matching.
 function userObjectId(id) {
   return mongoose.Types.ObjectId.createFromHexString(id);
 }
 
+// Clean folder names before saving or comparing.
 function cleanFolderName(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -279,10 +311,12 @@ function cleanFolderName(value) {
     .slice(0, 120);
 }
 
+// Normalize folder names for case-insensitive duplicate detection.
 function normalizeFolderName(value) {
   return cleanFolderName(value).toLowerCase();
 }
 
+// Convert a Folder record into the response shape React uses.
 function mapFolder(folder, documentCount = 0, lastDocumentAt = null) {
   const updatedAt = latestDate(folder.updatedAt, lastDocumentAt);
 
@@ -295,6 +329,7 @@ function mapFolder(folder, documentCount = 0, lastDocumentAt = null) {
   };
 }
 
+// Convert a Document record into the folder detail response shape.
 function mapFolderDocument(document) {
   const documentId = document._id.toString();
   const displayName = getDocumentDisplayName(document);
@@ -318,6 +353,7 @@ function mapFolderDocument(document) {
   };
 }
 
+// Choose the display name for a document in folder views.
 function getDocumentDisplayName(document) {
   return String(document.displayName || document.title || document.originalFileName || "Uploaded Document")
     .replace(/\.pdf$/i, "")
@@ -325,14 +361,17 @@ function getDocumentDisplayName(document) {
     .trim() || "Uploaded Document";
 }
 
+// Build the protected PDF URL for the document viewer.
 function buildPdfUrl(documentId) {
   return `/api/documents/${documentId}/pdf`;
 }
 
+// Build a static upload URL for stored files.
 function buildStaticFileUrl(storedFileName) {
   return storedFileName ? `/uploads/${encodeURIComponent(storedFileName)}` : "";
 }
 
+// Return the newest of two dates for folder activity.
 function latestDate(left, right) {
   if (!left) {
     return right;

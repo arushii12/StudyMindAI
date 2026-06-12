@@ -1,5 +1,8 @@
+// Import Mongoose so this file can define uploaded or pasted study materials.
 import mongoose from "mongoose";
 
+// Document stores the source material used to create summaries, quizzes, and flashcards.
+// userId keeps each learner's library private in MongoDB queries.
 const documentSchema = new mongoose.Schema(
   {
     userId: {
@@ -101,8 +104,12 @@ const documentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Speed up Library lists that show the user's most recently updated documents.
 documentSchema.index({ userId: 1, updatedAt: -1 });
+// Speed up dashboard and search views grouped by subject.
 documentSchema.index({ userId: 1, subject: 1 });
+// Speed up folder detail pages that list PDFs inside one folder.
 documentSchema.index({ userId: 1, folderId: 1, uploadDate: -1 });
 
+// Export the model used by upload, library, and generation services.
 export default mongoose.model("Document", documentSchema);

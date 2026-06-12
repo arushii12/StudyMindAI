@@ -1,15 +1,27 @@
+// Document counts and subject activity come from uploaded study materials.
 import Document from "../models/Document.js";
+// QuizAttempt powers score averages, quiz trends, and weak-topic insights.
 import QuizAttempt from "../models/QuizAttempt.js";
+// Flashcard records power generated-card and review activity stats.
 import Flashcard from "../models/Flashcard.js";
+// DailyGoal stores each user's selected study or quiz target.
 import DailyGoal from "../models/DailyGoal.js";
+// HiddenContinueLearningItem stores dashboard cards the user dismissed.
 import HiddenContinueLearningItem from "../models/HiddenContinueLearningItem.js";
+// StudyActivity stores active study minutes by day.
 import StudyActivity from "../models/StudyActivity.js";
+// Summary activity helps Continue Learning know which subjects have notes.
 import Summary from "../models/Summary.js";
+// Dashboard returns an empty state if MongoDB is unavailable.
 import { isDatabaseConnected } from "../config/db.js";
+// Mongoose converts string user ids for aggregation $match stages.
 import mongoose from "mongoose";
 
+// Number of milliseconds in one day, used for date ranges and streaks.
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Called when the learner saves a daily goal.
+// It validates limits and upserts one goal record for the current user.
 export async function updateDailyGoalForUser(user, payload = {}) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Daily goals require persistence.");
@@ -17,9 +29,11 @@ export async function updateDailyGoalForUser(user, payload = {}) {
     throw error;
   }
 
+  // Normalize goal type and keep target values inside reasonable bounds.
   const type = payload.type === "quiz" ? "quiz" : "studyTime";
   const targetMinutes = clampNumber(payload.targetMinutes, 1, 24 * 60, 60);
   const targetQuizzes = clampNumber(payload.targetQuizzes, 1, 50, 3);
+  // upsert means first-time users get a goal record and returning users update theirs.
   const goal = await DailyGoal.findOneAndUpdate(
     { userId: user.id },
     {
@@ -34,6 +48,8 @@ export async function updateDailyGoalForUser(user, payload = {}) {
   return { goal: mapGoal(goal) };
 }
 
+// Called by the frontend activity tracker.
+// It adds active study time to today's StudyActivity document.
 export async function recordStudyActivityForUser(user, payload = {}) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Study activity requires persistence.");
@@ -41,6 +57,7 @@ export async function recordStudyActivityForUser(user, payload = {}) {
     throw error;
   }
 
+  // Clamp duration so accidental huge timer values do not corrupt stats.
   const seconds = clampNumber(payload.durationSeconds, 1, 10 * 60, 0);
   const minutes = seconds / 60;
 
@@ -48,8 +65,10 @@ export async function recordStudyActivityForUser(user, payload = {}) {
     return { activity: null };
   }
 
+  // Source tells the dashboard which page recorded the study time.
   const source = normalizeActivitySource(payload.source);
   const dateKey = getDateKey(new Date());
+  // Increment today's total and the per-source total in one MongoDB update.
   const activity = await StudyActivity.findOneAndUpdate(
     { userId: user.id, dateKey },
     {
@@ -71,6 +90,7 @@ export async function recordStudyActivityForUser(user, payload = {}) {
   return { activity: mapActivity(activity) };
 }
 
+// Called when the learner dismisses a Continue Learning card.
 export async function hideContinueLearningItemForUser(user, payload = {}) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Continue Learning preferences require persistence.");
@@ -78,6 +98,7 @@ export async function hideContinueLearningItemForUser(user, payload = {}) {
     throw error;
   }
 
+  // The subject acts as the stable key for the hidden card.
   const subject = String(payload.subject || "").replace(/\s+/g, " ").trim();
 
   if (!subject) {
@@ -86,6 +107,7 @@ export async function hideContinueLearningItemForUser(user, payload = {}) {
     throw error;
   }
 
+  // Save one hidden record per user and subject.
   await HiddenContinueLearningItem.findOneAndUpdate(
     { userId: user.id, subject },
     {
@@ -102,7 +124,10 @@ export async function hideContinueLearningItemForUser(user, payload = {}) {
   };
 }
 
+// Called when Dashboard or Profile loads.
+// It combines MongoDB collections into one frontend-ready dashboard response.
 export async function getDashboardData(user) {
+  // Return a safe empty dashboard instead of throwing when persistence is unavailable.
   if (!user?.id || !isDatabaseConnected()) {
     return emptyDashboard(user);
   }
@@ -112,6 +137,7 @@ export async function getDashboardData(user) {
   const streakStartDate = new Date(now.getTime() - 365 * DAY_MS);
   streakStartDate.setUTCHours(0, 0, 0, 0);
 
+  // Run independent dashboard queries in parallel so the page loads faster.
   const [
     documentsUploaded,
     quizSummary,
@@ -130,7 +156,9 @@ export async function getDashboardData(user) {
     flashcardsGenerated,
     studyTimeSummary
   ] = await Promise.all([
+    // Count uploaded PDFs for the main KPI.
     countStoredPdfDocuments(user.id),
+    // Aggregate total quiz attempts and average quiz score.
     QuizAttempt.aggregate([
       { $match: { userId: userObjectId(user.id) } },
       { $sort: { completedAt: 1 } },
@@ -146,6 +174,7 @@ export async function getDashboardData(user) {
         }
       }
     ]),
+    // Compare current week and previous week score averages for KPI trend.
     QuizAttempt.aggregate([
       {
         $match: {
@@ -175,6 +204,7 @@ export async function getDashboardData(user) {
         }
       }
     ]),
+    // Build daily quiz score history for this month's chart.
     QuizAttempt.aggregate([
       {
         $match: {
@@ -197,6 +227,7 @@ export async function getDashboardData(user) {
       },
       { $sort: { _id: 1 } }
     ]),
+    // Build daily study-time history for this month's chart.
     StudyActivity.aggregate([
       {
         $match: {
@@ -212,7 +243,9 @@ export async function getDashboardData(user) {
       },
       { $sort: { _id: 1 } }
     ]),
+    // Load the saved daily goal for today's goal card.
     DailyGoal.findOne({ userId: user.id }).lean(),
+    // Group quiz attempts by topic for insights and Continue Learning.
     QuizAttempt.aggregate([
       { $match: { userId: userObjectId(user.id) } },
       { $sort: { completedAt: 1 } },
@@ -237,10 +270,12 @@ export async function getDashboardData(user) {
       },
       { $sort: { attempts: -1, lastStudiedAt: -1 } }
     ]),
+    // Recent attempts are used to detect improving topics.
     QuizAttempt.find({ userId: user.id })
       .sort({ completedAt: -1 })
       .limit(12)
       .lean(),
+    // Group documents by subject so Continue Learning can show active subjects.
     Document.aggregate([
       { $match: { userId: userObjectId(user.id) } },
       { $sort: { updatedAt: 1 } },
@@ -260,6 +295,7 @@ export async function getDashboardData(user) {
       { $sort: { latestDocumentActivityAt: -1 } },
       { $limit: 12 }
     ]),
+    // Group summaries by document subject for study progress.
     Summary.aggregate([
       { $match: { userId: userObjectId(user.id) } },
       {
@@ -280,6 +316,7 @@ export async function getDashboardData(user) {
         }
       }
     ]),
+    // Group flashcard activity by subject for progress cards.
     Flashcard.aggregate([
       { $match: { userId: userObjectId(user.id) } },
       {
@@ -296,7 +333,9 @@ export async function getDashboardData(user) {
         }
       }
     ]),
+    // Load hidden subjects so dismissed Continue Learning cards stay hidden.
     HiddenContinueLearningItem.find({ userId: user.id }).select("subject").lean(),
+    // Quiz activity days contribute to the study streak.
     QuizAttempt.aggregate([
       {
         $match: {
@@ -312,6 +351,7 @@ export async function getDashboardData(user) {
         }
       }
     ]),
+    // Study timer activity days also contribute to the study streak.
     StudyActivity.aggregate([
       {
         $match: {
@@ -325,7 +365,9 @@ export async function getDashboardData(user) {
         }
       }
     ]),
+    // Count individual flashcards for the generated flashcards KPI.
     Flashcard.countDocuments({ userId: userObjectId(user.id) }),
+    // Sum all study minutes for the lifetime study-time KPI.
     StudyActivity.aggregate([
       { $match: { userId: userObjectId(user.id) } },
       {
@@ -337,6 +379,7 @@ export async function getDashboardData(user) {
     ])
   ]);
 
+  // Convert aggregation results into the final response sections React renders.
   const summary = quizSummary[0] || {};
   const activityDays = [...quizActivityDays, ...studyActivityDays].map((item) => item._id);
   const studyStreak = calculateStudyStreak(activityDays);
@@ -372,10 +415,12 @@ export async function getDashboardData(user) {
   };
 }
 
+// Convert a string id into ObjectId for aggregation pipelines.
 function userObjectId(id) {
   return mongoose.Types.ObjectId.createFromHexString(id);
 }
 
+// Count stored PDFs owned by this user.
 async function countStoredPdfDocuments(userId) {
   return Document.countDocuments({
     userId,
@@ -384,6 +429,7 @@ async function countStoredPdfDocuments(userId) {
   });
 }
 
+// Keep numeric dashboard inputs inside safe limits.
 function clampNumber(value, min, max, fallback) {
   const number = Number(value);
 
@@ -394,15 +440,18 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
+// Format a date as YYYY-MM-DD for chart and streak keys.
 function getDateKey(date) {
   return new Date(date).toISOString().slice(0, 10);
 }
 
+// Keep activity source values limited to known frontend pages.
 function normalizeActivitySource(source) {
   const allowedSources = new Set(["dashboard", "summary", "library", "quizzes", "flashcards", "profile"]);
   return allowedSources.has(source) ? source : "dashboard";
 }
 
+// Convert a StudyActivity document into response shape.
 function mapActivity(activity) {
   return {
     id: activity._id?.toString?.(),
@@ -412,6 +461,7 @@ function mapActivity(activity) {
   };
 }
 
+// Convert a DailyGoal document into response shape.
 function mapGoal(goal) {
   return {
     hasGoal: Boolean(goal),
@@ -421,6 +471,7 @@ function mapGoal(goal) {
   };
 }
 
+// Add today's progress values to the saved goal.
 function buildGoalPayload(goal, today = {}) {
   return {
     ...mapGoal(goal),
@@ -429,6 +480,7 @@ function buildGoalPayload(goal, today = {}) {
   };
 }
 
+// Build an empty dashboard when there is no user or database connection.
 function emptyDashboard(user) {
   const goal = {
     hasGoal: false,
@@ -467,6 +519,7 @@ function emptyDashboard(user) {
   };
 }
 
+// Merge quiz score history and study-time history into one calendar chart.
 function buildCalendarChart(startDate, endDate, scoreHistory, studyHistory) {
   const scoresByDate = new Map(
     scoreHistory.map((item) => [
@@ -495,6 +548,7 @@ function buildCalendarChart(startDate, endDate, scoreHistory, studyHistory) {
   });
 }
 
+// Count consecutive active days ending today.
 function calculateStudyStreak(activityDays) {
   if (!activityDays.length) {
     return 0;
@@ -514,6 +568,7 @@ function calculateStudyStreak(activityDays) {
   return streak;
 }
 
+// Build the three dashboard insight cards shown to the learner.
 function buildInsights(topicPerformance, recentAttempts, studyStreak, subjectActivity, goal, documentsUploaded, chartData) {
   const documentSubjects = subjectActivity.map((subject) => ({
     subject: subject._id,
@@ -530,6 +585,7 @@ function buildInsights(topicPerformance, recentAttempts, studyStreak, subjectAct
   const mostStudied = [...topicPerformance].sort((a, b) => b.attempts - a.attempts)[0];
   const weekActivity = summarizeRecentActivity(chartData, 7);
 
+  // First insight celebrates progress or gives a useful starting action.
   const positiveInsight = (() => {
     if (studyStreak > 0) {
       return {
@@ -586,6 +642,7 @@ function buildInsights(topicPerformance, recentAttempts, studyStreak, subjectAct
     };
   })();
 
+  // Second insight points the learner toward revision or practice.
   const revisionInsight = (() => {
     if (revision) {
       return {
@@ -626,6 +683,7 @@ function buildInsights(topicPerformance, recentAttempts, studyStreak, subjectAct
     };
   })();
 
+  // Third insight focuses on goal progress or recent activity.
   const activityInsight = buildGoalInsight(goal) || (() => {
     if (weekActivity.quizAttempts > 0) {
       return {
@@ -666,6 +724,7 @@ function buildInsights(topicPerformance, recentAttempts, studyStreak, subjectAct
   return [positiveInsight, revisionInsight, activityInsight].slice(0, 3);
 }
 
+// Build the insight that explains today's goal progress.
 function buildGoalInsight(goal) {
   if (!goal?.hasGoal) {
     return {
@@ -724,6 +783,7 @@ function buildGoalInsight(goal) {
   };
 }
 
+// Check whether today's saved goal is complete.
 function isGoalComplete(goal) {
   if (!goal?.hasGoal) {
     return false;
@@ -736,6 +796,7 @@ function isGoalComplete(goal) {
   return Number(goal.todayStudyMinutes || 0) >= Number(goal.targetMinutes || 0);
 }
 
+// Convert completed work into a goal percentage.
 function goalPercent(completed, target) {
   if (!target) {
     return 0;
@@ -744,6 +805,7 @@ function goalPercent(completed, target) {
   return Math.min(100, Math.round((Number(completed || 0) / Number(target)) * 100));
 }
 
+// Sum recent chart entries to describe this week's activity.
 function summarizeRecentActivity(chartData = [], days = 7) {
   return chartData.slice(-days).reduce(
     (totals, item) => ({
@@ -754,6 +816,7 @@ function summarizeRecentActivity(chartData = [], days = 7) {
   );
 }
 
+// Find a topic whose recent scores improved.
 function findImprovingTopic(attempts) {
   const byTopic = new Map();
 
@@ -785,10 +848,12 @@ function findImprovingTopic(attempts) {
   return best;
 }
 
+// Build Continue Learning cards by merging document, summary, quiz, and flashcard activity.
 function buildContinueLearning(subjectActivity, summaryActivity, topicPerformance, flashcardActivity, hiddenItems = []) {
   const cardsBySubject = new Map();
   const hiddenSubjects = new Set(hiddenItems.map((item) => item.subject));
 
+  // Start cards from uploaded document activity.
   subjectActivity.forEach((subject) => {
     cardsBySubject.set(subject._id, {
       documentId: subject.documentId?.toString?.(),
@@ -806,6 +871,7 @@ function buildContinueLearning(subjectActivity, summaryActivity, topicPerformanc
     });
   });
 
+  // Merge summary completion into the same subject cards.
   summaryActivity.forEach((subject) => {
     const existing = cardsBySubject.get(subject._id) || {
       documentId: subject.documentId?.toString?.(),
@@ -824,6 +890,7 @@ function buildContinueLearning(subjectActivity, summaryActivity, topicPerformanc
     cardsBySubject.set(subject._id, existing);
   });
 
+  // Merge flashcard review activity into subject cards.
   flashcardActivity.forEach((subject) => {
     const existing = cardsBySubject.get(subject._id) || {
       subject: subject._id,
@@ -841,6 +908,7 @@ function buildContinueLearning(subjectActivity, summaryActivity, topicPerformanc
     cardsBySubject.set(subject._id, existing);
   });
 
+  // Merge quiz attempts and latest scores into subject cards.
   topicPerformance.forEach((topic) => {
     const existing = cardsBySubject.get(topic.subject) || {
       subject: topic.subject,
@@ -858,6 +926,7 @@ function buildContinueLearning(subjectActivity, summaryActivity, topicPerformanc
     cardsBySubject.set(topic.subject, existing);
   });
 
+  // Sort by most recent activity and return only visible cards.
   return [...cardsBySubject.values()]
     .filter((item) => !hiddenSubjects.has(item.subject))
     .filter((item) => item.lastActivityAt)
@@ -883,6 +952,7 @@ function buildContinueLearning(subjectActivity, summaryActivity, topicPerformanc
     });
 }
 
+// Build the average-score KPI trend compared with the previous week.
 function buildAverageScoreTrend(weeklyScoreTrend) {
   const current = weeklyScoreTrend.find((item) => item._id === "current")?.averageScore || 0;
   const previous = weeklyScoreTrend.find((item) => item._id === "previous")?.averageScore || 0;
@@ -891,6 +961,7 @@ function buildAverageScoreTrend(weeklyScoreTrend) {
   return buildKpiTrend(delta, "%");
 }
 
+// Build the study-streak KPI trend compared with last week's active days.
 function buildStudyStreakTrend(currentStreak, activityDays) {
   const activeDays = new Set(activityDays);
   const cursor = new Date();
@@ -911,6 +982,7 @@ function buildStudyStreakTrend(currentStreak, activityDays) {
   return buildKpiTrend(delta, "days");
 }
 
+// Convert a numeric delta into the small trend object used by KPI cards.
 function buildKpiTrend(delta, unit = "") {
   const value = Number(delta || 0);
 
@@ -933,6 +1005,7 @@ function buildKpiTrend(delta, unit = "") {
   };
 }
 
+// Estimate how much of a subject's study flow is complete.
 function calculateActionProgress(subject) {
   const availableActions = [
     subject.documents > 0 || subject.summaries > 0,
@@ -953,6 +1026,7 @@ function calculateActionProgress(subject) {
   return Math.round((completedActions / availableActions) * 100);
 }
 
+// Build the short status text shown on Continue Learning cards.
 function progressStatus(subject) {
   if (subject.quizAttempts > 0) {
     if (subject.summaries > 0) {
@@ -973,6 +1047,7 @@ function progressStatus(subject) {
   return "Not studied yet";
 }
 
+// Return whichever of two dates is latest.
 function latestDate(left, right) {
   if (!left) {
     return right;
@@ -985,6 +1060,7 @@ function latestDate(left, right) {
   return new Date(left) > new Date(right) ? left : right;
 }
 
+// Convert a date into text like "Last studied: today".
 function formatRelativeDate(date) {
   if (!date) {
     return "Not studied yet";

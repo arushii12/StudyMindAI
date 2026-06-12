@@ -1,17 +1,28 @@
+// Import Mongoose so ids can be validated before Review Center queries.
 import mongoose from "mongoose";
+// Document verifies summary ownership before saving revision copies.
 import Document from "../models/Document.js";
+// Folder names are used when grouping review items.
 import Folder from "../models/Folder.js";
+// MarkedQuestion stores quiz questions saved for later revision.
 import MarkedQuestion from "../models/MarkedQuestion.js";
+// Quiz is used to verify marked questions belong to the user's quiz.
 import Quiz from "../models/Quiz.js";
+// SavedSummary stores summary snapshots in Review Center.
 import SavedSummary from "../models/SavedSummary.js";
+// Summary provides current summary text when React does not send it directly.
 import Summary from "../models/Summary.js";
+// Review Center requires MongoDB.
 import { isDatabaseConnected } from "../config/db.js";
 
+// Called when the user saves a summary to Review Center.
 export async function saveSummaryForReview(user, payload = {}) {
   ensureUserAndDatabase(user);
+  // Validate linked ids before querying MongoDB.
   const documentId = validateId(payload.documentId, "Invalid document id.");
   const summaryId = payload.summaryId ? validateId(payload.summaryId, "Invalid summary id.") : null;
   const summaryLength = normalizeLength(payload.summaryLength);
+  // Confirm the document belongs to this user before saving its summary.
   const document = await Document.findOne({ _id: documentId, userId: user.id }).lean();
 
   if (!document) {
@@ -20,6 +31,7 @@ export async function saveSummaryForReview(user, payload = {}) {
     throw error;
   }
 
+  // Use the requested summary or fallback to the latest summary for this document.
   const summary = summaryId
     ? await Summary.findOne({ _id: summaryId, userId: user.id, documentId }).lean()
     : await Summary.findOne({ userId: user.id, documentId }).sort({ updatedAt: -1 }).lean();
@@ -33,6 +45,7 @@ export async function saveSummaryForReview(user, payload = {}) {
     throw error;
   }
 
+  // Upsert prevents duplicate saved summaries for the same document and length.
   const saved = await SavedSummary.findOneAndUpdate(
     {
       userId: user.id,
@@ -56,8 +69,10 @@ export async function saveSummaryForReview(user, payload = {}) {
   return { savedSummary: await mapSavedSummary(saved), message: "Saved to Review Center." };
 }
 
+// Called when Review Center lists all saved summaries.
 export async function listSavedSummariesForReview(user) {
   ensureUserAndDatabase(user);
+  // Load only saved summaries owned by this user.
   const summaries = await SavedSummary.find({ userId: user.id })
     .sort({ savedAt: -1 })
     .lean();
@@ -68,8 +83,10 @@ export async function listSavedSummariesForReview(user) {
   };
 }
 
+// Called when Review Center filters saved summaries by folder.
 export async function listSavedSummariesForReviewFolder(user, folderId) {
   ensureUserAndDatabase(user);
+  // buildFolderQuery keeps the query scoped to userId and folderId.
   const summaries = await SavedSummary.find(buildFolderQuery(user, folderId))
     .sort({ savedAt: -1 })
     .lean();
@@ -80,9 +97,11 @@ export async function listSavedSummariesForReviewFolder(user, folderId) {
   };
 }
 
+// Called when the user removes a saved summary.
 export async function removeSavedSummaryForReview(user, id) {
   ensureUserAndDatabase(user);
   validateId(id, "Invalid saved summary id.");
+  // Delete only a saved summary owned by this user.
   const result = await SavedSummary.deleteOne({ _id: id, userId: user.id });
 
   return {
@@ -91,8 +110,10 @@ export async function removeSavedSummaryForReview(user, id) {
   };
 }
 
+// Called when the user marks a quiz question for review.
 export async function markQuestionForReview(user, payload = {}) {
   ensureUserAndDatabase(user);
+  // Validate the quiz id before loading the quiz.
   const quizId = validateId(payload.quizId, "Invalid quiz id.");
   const questionId = String(payload.questionId || "").trim();
 
@@ -102,6 +123,7 @@ export async function markQuestionForReview(user, payload = {}) {
     throw error;
   }
 
+  // Load the quiz only if it belongs to the current user.
   const quiz = await Quiz.findOne({ _id: quizId, userId: user.id }).lean();
 
   if (!quiz) {
@@ -110,6 +132,7 @@ export async function markQuestionForReview(user, payload = {}) {
     throw error;
   }
 
+  // Find the exact embedded quiz question that React marked.
   const question = quiz.questions.find((item) => item._id?.toString?.() === questionId);
 
   if (!question) {
@@ -118,6 +141,7 @@ export async function markQuestionForReview(user, payload = {}) {
     throw error;
   }
 
+  // Upsert allows marking the same question again without creating duplicates.
   const marked = await MarkedQuestion.findOneAndUpdate(
     { userId: user.id, quizId, questionId },
     {
@@ -139,8 +163,10 @@ export async function markQuestionForReview(user, payload = {}) {
   return { markedQuestion: await mapMarkedQuestion(marked), message: "Question marked for review." };
 }
 
+// Called when Review Center lists all marked questions.
 export async function listMarkedQuestionsForReview(user) {
   ensureUserAndDatabase(user);
+  // Load only marked questions saved by this user.
   const questions = await MarkedQuestion.find({ userId: user.id })
     .sort({ markedAt: -1 })
     .lean();
@@ -151,8 +177,10 @@ export async function listMarkedQuestionsForReview(user) {
   };
 }
 
+// Called when Review Center filters marked questions by folder.
 export async function listMarkedQuestionsForReviewFolder(user, folderId) {
   ensureUserAndDatabase(user);
+  // buildFolderQuery handles real folders and the uncategorized bucket.
   const questions = await MarkedQuestion.find(buildFolderQuery(user, folderId))
     .sort({ markedAt: -1 })
     .lean();
@@ -163,9 +191,11 @@ export async function listMarkedQuestionsForReviewFolder(user, folderId) {
   };
 }
 
+// Called when the user unmarks a question.
 export async function removeMarkedQuestionForReview(user, id) {
   ensureUserAndDatabase(user);
   validateId(id, "Invalid marked question id.");
+  // Delete only a marked question owned by this user.
   const result = await MarkedQuestion.deleteOne({ _id: id, userId: user.id });
 
   return {
@@ -174,8 +204,10 @@ export async function removeMarkedQuestionForReview(user, id) {
   };
 }
 
+// Called when React needs folders that contain review material.
 export async function getReviewFoldersForUser(user) {
   ensureUserAndDatabase(user);
+  // Combine folder groups from saved summaries and marked questions.
   const [summaryData, questionData] = await Promise.all([
     listSavedSummariesForReview(user),
     listMarkedQuestionsForReview(user)
@@ -199,6 +231,7 @@ export async function getReviewFoldersForUser(user) {
   return { folders: [...byKey.values()] };
 }
 
+// Shared guard for Review Center operations.
 function ensureUserAndDatabase(user) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Review Center requires stored data.");
@@ -207,6 +240,7 @@ function ensureUserAndDatabase(user) {
   }
 }
 
+// Validate MongoDB ids and return the original id for query building.
 function validateId(id, message) {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     const error = new Error(message);
@@ -217,15 +251,18 @@ function validateId(id, message) {
   return id;
 }
 
+// Normalize summary length values stored in Review Center.
 function normalizeLength(length = "short") {
   return ["short", "medium", "detailed"].includes(length) ? length : "short";
 }
 
+// Normalize quiz answer indexes before saving marked questions.
 function normalizeAnswer(value) {
   const answer = Number(value);
   return Number.isInteger(answer) && answer >= 0 && answer <= 3 ? answer : null;
 }
 
+// Build a user-scoped folder query for Review Center filters.
 function buildFolderQuery(user, folderId) {
   if (folderId === "uncategorized") {
     return { userId: user.id, folderId: null };
@@ -235,6 +272,7 @@ function buildFolderQuery(user, folderId) {
   return { userId: user.id, folderId };
 }
 
+// Build folder metadata for a Review Center folder response.
 async function buildFolderMeta(folderId) {
   if (folderId === "uncategorized") {
     return { folderId: null, folderName: "Uncategorized" };
@@ -248,7 +286,9 @@ async function buildFolderMeta(folderId) {
   };
 }
 
+// Group saved summaries or marked questions under folder cards.
 async function groupItemsByFolder(items, mapper) {
+  // Load folder names once instead of querying for every item.
   const folderIds = [...new Set(items.map((item) => item.folderId?.toString()).filter(Boolean))];
   const folders = folderIds.length
     ? await Folder.find({ _id: { $in: folderIds } }).select("name").lean()
@@ -279,6 +319,7 @@ async function groupItemsByFolder(items, mapper) {
   return [...groups.values()].sort((a, b) => a.folderName.localeCompare(b.folderName));
 }
 
+// Convert a SavedSummary record into the response shape React renders.
 async function mapSavedSummary(summary, folderNames = null) {
   const folderName = await resolveFolderName(summary.folderId, folderNames);
 
@@ -295,6 +336,7 @@ async function mapSavedSummary(summary, folderNames = null) {
   };
 }
 
+// Convert a MarkedQuestion record into the response shape React renders.
 async function mapMarkedQuestion(question, folderNames = null) {
   const folderName = await resolveFolderName(question.folderId, folderNames);
 
@@ -314,6 +356,7 @@ async function mapMarkedQuestion(question, folderNames = null) {
   };
 }
 
+// Resolve a folder name from cached names or MongoDB.
 async function resolveFolderName(folderId, folderNames) {
   if (!folderId) {
     return "Uncategorized";

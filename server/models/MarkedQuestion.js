@@ -1,5 +1,8 @@
+// Import Mongoose so this file can define questions marked for review.
 import mongoose from "mongoose";
 
+// MarkedQuestion stores quiz questions the learner wants to revise later.
+// It keeps the question, answer, and explanation even if the quiz list changes.
 const markedQuestionSchema = new mongoose.Schema(
   {
     userId: {
@@ -63,6 +66,8 @@ const markedQuestionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Prevent the same user from marking the same quiz question more than once.
 markedQuestionSchema.index({ userId: 1, quizId: 1, questionId: 1 }, { unique: true });
 
+// Export the model used by reviewService.
 export default mongoose.model("MarkedQuestion", markedQuestionSchema);

@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+// Import Multer because browser PDF uploads arrive as multipart/form-data, not JSON.
 import multer from "multer";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,6 +11,8 @@ const maxFileSize = 10 * 1024 * 1024;
 
 fs.mkdirSync(uploadDir, { recursive: true });
 
+// Save the uploaded PDF to disk first.
+// documentService later reads this file to extract text.
 const storage = multer.diskStorage({
   destination(req, file, cb) {
     cb(null, uploadDir);
@@ -24,6 +27,8 @@ const storage = multer.diskStorage({
   }
 });
 
+// Reject non-PDF files before they reach the service layer.
+// This keeps documentService focused on valid PDF processing.
 function fileFilter(req, file, cb) {
   const isPdfMime = file.mimetype === "application/pdf";
   const isPdfName = path.extname(file.originalname).toLowerCase() === ".pdf";
@@ -35,6 +40,8 @@ function fileFilter(req, file, cb) {
   return cb(null, true);
 }
 
+// Routes use this as uploadPdf.single("file").
+// The field name must match the FormData key sent by React.
 export const uploadPdf = multer({
   storage,
   fileFilter,
@@ -44,6 +51,7 @@ export const uploadPdf = multer({
   }
 });
 
+// Convert Multer errors into messages React can show to the user.
 export function handleUploadError(error, req, res, next) {
   if (!error) {
     return next();

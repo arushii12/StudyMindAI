@@ -1,3 +1,4 @@
+// Technical terms that should keep standard capitalization in generated notes.
 const TECHNICAL_TERMS = [
   ["dbms", "DBMS"],
   ["sql", "SQL"],
@@ -21,6 +22,7 @@ const TECHNICAL_TERMS = [
   ["vpc", "VPC"]
 ];
 
+// Allowed headings keep exported PDF notes structured and predictable.
 const ALLOWED_SECTION_HEADINGS = new Map([
   ["overview", "Overview"],
   ["topic overview", "Topic Overview"],
@@ -45,7 +47,10 @@ const ALLOWED_SECTION_HEADINGS = new Map([
   ["must remember points", "Must-Remember Points"]
 ]);
 
+// Clean AI text before showing it in the UI or exporting it to PDF.
+// This removes markdown artifacts while keeping readable study content.
 export function sanitizeAiText(value, options = {}) {
+  // preserveLines controls whether paragraphs stay separated or become one line.
   const preserveLines = options.preserveLines !== false;
   const cleaned = normalizeTechnicalCapitalization(String(value || "")
     .replace(/```(?:[a-z0-9_-]+)?\s*/gi, "")
@@ -78,6 +83,7 @@ export function sanitizeAiText(value, options = {}) {
     .trim();
 }
 
+// Normalize common technical terms like DBMS, SQL, AWS, and CI/CD.
 export function normalizeTechnicalCapitalization(value) {
   return TECHNICAL_TERMS.reduce((text, [term, replacement]) => {
     const pattern = new RegExp(`\\b${escapeRegExp(term)}\\b`, "gi");
@@ -85,17 +91,21 @@ export function normalizeTechnicalCapitalization(value) {
   }, String(value || ""));
 }
 
+// Convert AI headings into safe, meaningful section headings.
 export function normalizeSectionHeading(value, fallback = "Study Notes") {
+  // Remove numbering and punctuation before checking heading quality.
   const cleaned = sanitizeAiText(value, { preserveLines: false })
     .replace(/^\s*(?:section|topic)\s+\d+\s*[:.-]?\s*/i, "")
     .replace(/[.;:,!?]+$/g, "")
     .trim();
   const knownHeading = ALLOWED_SECTION_HEADINGS.get(cleaned.toLowerCase());
 
+  // Prefer a known canonical heading when AI gives a close match.
   if (knownHeading) {
     return knownHeading;
   }
 
+  // Fallback prevents sentence fragments from becoming section titles.
   if (!isMeaningfulHeading(cleaned)) {
     return fallback;
   }
@@ -103,19 +113,24 @@ export function normalizeSectionHeading(value, fallback = "Study Notes") {
   return toTitleCase(cleaned);
 }
 
+// Normalize AI JSON for quick or detailed PDF study notes.
 export function normalizePdfStudyNotes(payload = {}, pdfType = "detailed") {
+  // Convert each AI section into a heading plus clean item list.
   const rawSections = Array.isArray(payload.sections) ? payload.sections : [];
   const sections = rawSections
     .map((section, index) => normalizeSection(section, index))
     .filter((section) => section.items.length);
+  // Quick revision PDFs should not include questions; detailed PDFs can.
   const importantQuestions = pdfType === "quick"
     ? []
     : normalizeQuestions(payload.importantQuestions || payload.questions);
 
+  // Support older AI output that returned notes as one text block.
   if (!sections.length) {
     sections.push(...parseLegacyNotes(payload.notes || payload.content || payload.summary));
   }
 
+  // Keep question sections out of the main notes body.
   const filteredSections = sections.filter((section) => !/important questions?|q\s*&\s*a/i.test(section.heading));
 
   return {
@@ -126,6 +141,7 @@ export function normalizePdfStudyNotes(payload = {}, pdfType = "detailed") {
   };
 }
 
+// Convert structured sections into plain text for jsPDF export.
 export function formatPdfNotesAsText(sections = []) {
   return sections
     .map((section) => `${section.heading}:\n${section.items.join("\n")}`)
@@ -133,6 +149,7 @@ export function formatPdfNotesAsText(sections = []) {
     .trim();
 }
 
+// Normalize one AI section into a stable heading and unique clean items.
 function normalizeSection(section, index) {
   const heading = normalizeSectionHeading(
     section?.heading || section?.title || section?.name,
@@ -150,6 +167,7 @@ function normalizeSection(section, index) {
   return { heading, items: [...new Set(items)] };
 }
 
+// Normalize detailed PDF questions into question/answer objects.
 function normalizeQuestions(questions) {
   if (!Array.isArray(questions)) {
     return [];
@@ -168,6 +186,7 @@ function normalizeQuestions(questions) {
     .slice(0, 10);
 }
 
+// Parse older plain-text note output into section objects.
 function parseLegacyNotes(value) {
   const text = sanitizeAiText(value);
   const sections = [];
@@ -176,6 +195,7 @@ function parseLegacyNotes(value) {
   text.split(/\n+/).forEach((line) => {
     const headingMatch = line.match(/^([^:]{3,70}):\s*(.*)$/);
 
+    // Lines with meaningful "Heading: content" format start new sections.
     if (headingMatch && isMeaningfulHeading(headingMatch[1])) {
       current = {
         heading: normalizeSectionHeading(headingMatch[1], sections.length ? "Study Notes" : "Overview"),
@@ -201,6 +221,7 @@ function parseLegacyNotes(value) {
     .filter((section) => section.items.length);
 }
 
+// Merge duplicate headings while keeping unique items.
 function mergeDuplicateSections(sections) {
   const merged = new Map();
 
@@ -215,6 +236,7 @@ function mergeDuplicateSections(sections) {
   return [...merged.values()];
 }
 
+// Reject sentence fragments and random examples as headings.
 function isMeaningfulHeading(value) {
   const text = String(value || "").trim();
   const words = text.split(/\s+/).filter(Boolean);
@@ -234,6 +256,7 @@ function isMeaningfulHeading(value) {
   return words.length >= 2 || ALLOWED_SECTION_HEADINGS.has(text.toLowerCase());
 }
 
+// Convert a clean heading into title case without breaking acronyms.
 function toTitleCase(value) {
   const smallWords = new Set(["and", "or", "of", "to", "in", "for", "with", "on", "the", "a", "an"]);
 
@@ -252,6 +275,7 @@ function toTitleCase(value) {
     .join(" ");
 }
 
+// Escape text before using it inside a RegExp.
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

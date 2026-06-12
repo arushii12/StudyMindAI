@@ -1,23 +1,35 @@
+// Import Mongoose so summary and document ids can be validated before queries.
 import mongoose from "mongoose";
+// Document stores the source material used for summaries.
 import Document from "../models/Document.js";
+// Summary stores generated short, medium, and detailed notes.
 import Summary from "../models/Summary.js";
+// ImportantQuestion stores AI-generated revision questions for a summary.
 import ImportantQuestion from "../models/ImportantQuestion.js";
+// AI service generates summaries, chat answers, and PDF-ready notes.
 import { generatePdfStudyNotes, generateStudyAssistantAnswer, generateSummary } from "./aiService.js";
+// Used to stop summary work cleanly when MongoDB is unavailable.
 import { isDatabaseConnected } from "../config/db.js";
+// Used when the learner selects multiple PDFs for one combined summary.
 import { buildSelectedPdfSource } from "./selectedPdfSourceService.js";
+// Formatter cleans AI notes before React turns them into PDF content.
 import {
   formatPdfNotesAsText,
   normalizePdfStudyNotes,
   sanitizeAiText
 } from "./studyContentFormatter.js";
 
+// Called when the Summary page opens.
+// It loads the saved summary and questions for the selected document.
 export async function getSummaryForUser(user, options = {}) {
+  // Summaries are stored per user in MongoDB.
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Summaries require stored documents.");
     error.status = 503;
     throw error;
   }
 
+  // Choose the requested document or fallback to the user's latest document.
   const document = await findSelectedDocument(user.id, options.documentId);
 
   if (!document) {
@@ -26,8 +38,10 @@ export async function getSummaryForUser(user, options = {}) {
     throw error;
   }
 
+  // Load the summary only if it belongs to this user.
   const summary = await Summary.findOne({ userId: user.id, documentId: document._id }).lean();
 
+  // Tell React to show the empty/generate state when no summary exists yet.
   if (!summary) {
     return {
       document: mapDocument(document),
@@ -41,6 +55,7 @@ export async function getSummaryForUser(user, options = {}) {
     };
   }
 
+  // Load questions in the order AI generated them.
   const questions = await ImportantQuestion.find({ summaryId: summary._id })
     .sort({ order: 1 })
     .lean();
@@ -48,7 +63,10 @@ export async function getSummaryForUser(user, options = {}) {
   return mapSummaryResponse(document, summary, questions, options.length);
 }
 
+// Called when the user generates or regenerates a summary.
+// It sends study material to AI, validates the JSON, and saves MongoDB records.
 export async function generateSummaryForUser(user, payload = {}) {
+  // Normalize the requested tab so summaryText matches what React should show.
   const length = normalizeLength(payload.length);
 
   if (!user?.id || !isDatabaseConnected()) {
@@ -57,7 +75,9 @@ export async function generateSummaryForUser(user, payload = {}) {
     throw error;
   }
 
+  // Combine selected PDFs when React sends selectedDocumentIds.
   const selectedSource = await buildSelectedPdfSource(user, payload);
+  // Use the selected primary document or the single requested document.
   const document = selectedSource?.primaryDocument || await findSelectedDocument(user.id, payload.documentId);
 
   if (!document) {
@@ -66,22 +86,27 @@ export async function generateSummaryForUser(user, payload = {}) {
     throw error;
   }
 
+  // AI receives selected PDF text or the document's extracted text.
   const sourceText = selectedSource?.text || document.extractedText;
 
+  // Reject too-short source text before calling AI.
   if (countWords(sourceText) < 40) {
     const error = new Error("Not enough extracted study material is available to generate a summary.");
     error.status = 422;
     throw error;
   }
 
+  // Ask AI for structured summary content and important questions.
   const generated = await generateSummary(sourceText, {
     documentTitle: selectedSource?.title || getDocumentDisplayName(document),
     subject: selectedSource?.subject || document.subject,
     scope: selectedSource?.scope || "single-document"
   });
+  // Validate AI output before saving it.
   const content = validateSummaryContent(generated.content);
   const generatedQuestions = validateImportantQuestions(generated.questions);
 
+  // Upsert one summary per user/document so regeneration replaces old content.
   const summary = await Summary.findOneAndUpdate(
     { userId: user.id, documentId: document._id },
     {
@@ -101,12 +126,15 @@ export async function generateSummaryForUser(user, payload = {}) {
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 
+  // Upload-generated summaries should not mark the document as studied.
   const documentUpdate = payload.markStudied === false
     ? { summaryGenerated: true }
     : { summaryGenerated: true, lastStudiedAt: new Date() };
 
+  // Mark the document as having a generated summary.
   await Document.findByIdAndUpdate(document._id, documentUpdate);
 
+  // Replace old important questions with the latest AI-generated set.
   await ImportantQuestion.deleteMany({ summaryId: summary._id });
   const questions = await ImportantQuestion.insertMany(
     generatedQuestions.map((question, index) => ({
@@ -121,7 +149,9 @@ export async function generateSummaryForUser(user, payload = {}) {
   return mapSummaryResponse(document, summary.toObject(), questions, length);
 }
 
+// Called when React needs questions for an existing summary.
 export async function getQuestionsForSummary(user, summaryId) {
+  // Validate summary id before querying MongoDB.
   if (!mongoose.Types.ObjectId.isValid(summaryId)) {
     const error = new Error("Invalid summary id.");
     error.status = 400;
@@ -134,6 +164,7 @@ export async function getQuestionsForSummary(user, summaryId) {
     throw error;
   }
 
+  // Query by userId so one user cannot read another user's questions.
   const questions = await ImportantQuestion.find({ userId: user.id, summaryId })
     .sort({ order: 1 })
     .lean();
@@ -141,6 +172,7 @@ export async function getQuestionsForSummary(user, summaryId) {
   return questions.map(mapQuestion);
 }
 
+// Called when the user deletes a summary.
 export async function deleteSummaryForUser(user, summaryId) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Summaries require stored documents.");
@@ -148,12 +180,14 @@ export async function deleteSummaryForUser(user, summaryId) {
     throw error;
   }
 
+  // Validate summary id before delete operation.
   if (!mongoose.Types.ObjectId.isValid(summaryId)) {
     const error = new Error("Invalid summary id.");
     error.status = 400;
     throw error;
   }
 
+  // Delete only summaries owned by the current user.
   const result = await Summary.deleteOne({ _id: summaryId, userId: user.id });
 
   if (!result.deletedCount) {
@@ -168,6 +202,8 @@ export async function deleteSummaryForUser(user, summaryId) {
   };
 }
 
+// Called by Study Assistant chat.
+// It builds document context and asks AI for a grounded answer.
 export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Study assistant requires stored documents.");
@@ -175,6 +211,7 @@ export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
     throw error;
   }
 
+  // Clean the user's chat message before validating it.
   const message = String(payload.message || "").replace(/\s+/g, " ").trim();
 
   if (!message) {
@@ -183,6 +220,7 @@ export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
     throw error;
   }
 
+  // Load the document only if it belongs to this user.
   const document = await findSelectedDocument(user.id, documentId);
 
   if (!document) {
@@ -191,17 +229,20 @@ export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
     throw error;
   }
 
+  // Add saved summary context so AI can answer from organized notes.
   const summary = await Summary.findOne({ userId: user.id, documentId: document._id }).lean();
   const length = normalizeLength(payload.length || summary?.activeLength);
   const summaryText = summary?.content?.[length] || summary?.summaryText || "";
   const notesText = document.extractedText || "";
 
+  // Require enough context to avoid generic AI answers.
   if (countWords(notesText) < 20 && countWords(summaryText) < 20) {
     const error = new Error("Not enough notes or summary content is available for the study assistant.");
     error.status = 422;
     throw error;
   }
 
+  // Ask AI to answer using document text, summary text, and recent chat history.
   const generated = await generateStudyAssistantAnswer(notesText, {
     documentTitle: getDocumentDisplayName(document),
     subject: document.subject,
@@ -210,6 +251,7 @@ export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
     message,
     history: normalizeChatHistory(payload.history)
   });
+  // Clean and validate the AI answer before returning it.
   const answer = String(generated.answer || "").replace(/\s+/g, " ").trim();
   const sourceType = ["notes", "summary", "general"].includes(generated.sourceType)
     ? generated.sourceType
@@ -232,6 +274,8 @@ export async function chatWithSummaryAssistant(user, documentId, payload = {}) {
   };
 }
 
+// Called when React exports summary notes as a PDF.
+// It asks AI for PDF-ready sections and validates the formatted output.
 export async function generateSummaryPdfContentForUser(user, payload = {}) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Summary PDF generation requires stored summaries.");
@@ -239,8 +283,10 @@ export async function generateSummaryPdfContentForUser(user, payload = {}) {
     throw error;
   }
 
+  // Normalize PDF type and summary length from React.
   const pdfType = normalizePdfType(payload.pdfType);
   const length = normalizeLength(payload.length || "detailed");
+  // Load the selected document with user ownership protection.
   const document = await findSelectedDocument(user.id, payload.documentId);
 
   if (!document) {
@@ -249,17 +295,20 @@ export async function generateSummaryPdfContentForUser(user, payload = {}) {
     throw error;
   }
 
+  // Use the stored summary as the main source for PDF notes.
   const summary = await Summary.findOne({ userId: user.id, documentId: document._id }).lean();
   const summaryText = String(
     summary?.content?.detailed || summary?.content?.[length] || payload.summaryText || summary?.summaryText || ""
   ).trim();
 
+  // React should generate a summary before asking for a PDF export.
   if (countWords(summaryText) < 40) {
     const error = new Error("Generate a summary before downloading a PDF.");
     error.status = 422;
     throw error;
   }
 
+  // Detailed PDFs can include important questions; quick revision PDFs should not.
   const questionContext = pdfType === "detailed"
     ? normalizePdfQuestions(payload.questions)
     : [];
@@ -273,11 +322,13 @@ export async function generateSummaryPdfContentForUser(user, payload = {}) {
   ].filter(Boolean);
   const pdfSourceText = sourceParts.join("\n\n");
 
+  // Ask AI to convert summary/context into clean PDF note sections.
   const generated = await generatePdfStudyNotes(pdfSourceText, {
     pdfType,
     documentTitle: getDocumentDisplayName(document),
     subject: document.subject
   });
+  // Normalize and format AI output before React builds the PDF file.
   const normalizedPdf = normalizePdfStudyNotes(generated, pdfType);
   const notes = formatPdfNotesAsText(normalizedPdf.sections);
 
@@ -300,25 +351,31 @@ export async function generateSummaryPdfContentForUser(user, payload = {}) {
   };
 }
 
+// Find the selected document for summary features.
 async function findSelectedDocument(userId, documentId) {
   if (documentId) {
+    // Validate documentId before querying.
     if (!mongoose.Types.ObjectId.isValid(documentId)) {
       const error = new Error("Invalid document id.");
       error.status = 400;
       throw error;
     }
 
+    // Include userId so users only read their own documents.
     return Document.findOne({ _id: documentId, userId }).lean();
   }
 
+  // Fallback to the user's most recently studied non-archived document.
   return Document.findOne({ userId, status: { $ne: "archived" } })
     .sort({ lastStudiedAt: -1, updatedAt: -1 })
     .lean();
 }
 
+// Build the full response shape consumed by the Summary page.
 function mapSummaryResponse(document, summary, questions, requestedLength) {
   const activeLength = normalizeLength(requestedLength || summary.activeLength);
   const content = normalizeStoredSummaryContent(summary);
+  // Pick the requested summary length, with fallbacks for older records.
   const displayedContent = content[activeLength]
     || content.detailed
     || content.medium
@@ -349,6 +406,7 @@ function mapSummaryResponse(document, summary, questions, requestedLength) {
   };
 }
 
+// Normalize stored summary content from current or older summary records.
 function normalizeStoredSummaryContent(summary = {}) {
   const fallback = cleanSummaryOutput(summary.summaryText);
   const content = {
@@ -364,6 +422,7 @@ function normalizeStoredSummaryContent(summary = {}) {
   return content;
 }
 
+// Convert a Document record into the small Summary page document object.
 function mapDocument(document) {
   const displayName = getDocumentDisplayName(document);
 
@@ -380,6 +439,7 @@ function mapDocument(document) {
   };
 }
 
+// Build the display name shown in Summary and PDF export.
 function getDocumentDisplayName(document) {
   return String(document.displayName || document.title || document.originalFileName || "Study Material")
     .replace(/\.pdf$/i, "")
@@ -387,6 +447,7 @@ function getDocumentDisplayName(document) {
     .trim() || "Study Material";
 }
 
+// Convert an ImportantQuestion record into the response shape.
 function mapQuestion(question) {
   return {
     id: question._id?.toString?.() || `question-${question.order}`,
@@ -395,6 +456,7 @@ function mapQuestion(question) {
   };
 }
 
+// Keep only recent chat history and remove huge message content before prompting AI.
 function normalizeChatHistory(history) {
   if (!Array.isArray(history)) {
     return [];
@@ -409,6 +471,7 @@ function normalizeChatHistory(history) {
     .slice(-8);
 }
 
+// Build frontend links from a summary to the related quiz and flashcard pages.
 function buildLinks(documentId) {
   return {
     quiz: `#quizzes?documentId=${documentId}`,
@@ -416,14 +479,17 @@ function buildLinks(documentId) {
   };
 }
 
+// Normalize summary length tabs.
 function normalizeLength(length = "short") {
   return ["short", "medium", "detailed"].includes(length) ? length : "short";
 }
 
+// Normalize requested PDF export type.
 function normalizePdfType(pdfType = "detailed") {
   return ["quick", "detailed"].includes(pdfType) ? pdfType : "detailed";
 }
 
+// Clean important questions before adding them to detailed PDF context.
 function normalizePdfQuestions(questions = []) {
   return Array.isArray(questions)
     ? questions
@@ -433,6 +499,7 @@ function normalizePdfQuestions(questions = []) {
     : [];
 }
 
+// Validate summary JSON returned by AI before saving it.
 function validateSummaryContent(content = {}) {
   const normalized = {
     short: cleanSummaryOutput(content.short),
@@ -444,18 +511,21 @@ function validateSummaryContent(content = {}) {
   const mediumWords = countWords(normalized.medium);
   const detailedWords = countWords(normalized.detailed);
 
+  // Each length must be substantial enough for the UI tab it fills.
   if (shortWords < 45 || mediumWords < 120 || detailedWords < 350) {
     const error = new Error("AI returned an incomplete summary. Please regenerate.");
     error.status = 422;
     throw error;
   }
 
+  // Reject noisy markdown/bullet artifacts that make summaries look broken.
   if (hasFormattingNoise(normalized.short) || hasFormattingNoise(normalized.medium) || hasFormattingNoise(normalized.detailed)) {
     const error = new Error("AI returned poorly formatted summary content. Please regenerate.");
     error.status = 422;
     throw error;
   }
 
+  // Reject generic headings because they make the notes weak for revision.
   if (hasGenericSummaryHeadings(normalized.short) || hasGenericSummaryHeadings(normalized.medium) || hasGenericSummaryHeadings(normalized.detailed)) {
     const error = new Error("AI returned generic summary headings. Please regenerate.");
     error.status = 422;
@@ -465,6 +535,7 @@ function validateSummaryContent(content = {}) {
   return normalized;
 }
 
+// Validate AI-generated important questions before saving them.
 function validateImportantQuestions(questions) {
   const values = Array.isArray(questions)
     ? questions.map((question) => String(question || "").trim()).filter(Boolean)
@@ -480,10 +551,12 @@ function validateImportantQuestions(questions) {
   return uniqueQuestions;
 }
 
+// Clean one summary text block from AI.
 function cleanSummaryOutput(text) {
   return removeRepeatedSummarySections(sanitizeAiText(text));
 }
 
+// Remove repeated sections when AI restates the same idea under different headings.
 function removeRepeatedSummarySections(text) {
   const sections = String(text || "")
     .split(/\n+/)
@@ -494,6 +567,7 @@ function removeRepeatedSummarySections(text) {
     return String(text || "").trim();
   }
 
+  // Store fingerprints for kept sections so new sections can be compared.
   const kept = [];
   const fingerprints = [];
 
@@ -513,6 +587,7 @@ function removeRepeatedSummarySections(text) {
   return kept.length ? kept.join("\n") : String(text || "").trim();
 }
 
+// Convert section text into a set of meaningful words for duplicate detection.
 function buildSummaryFingerprint(text) {
   const ignoredWords = new Set([
     "about", "after", "also", "among", "and", "are", "been", "being", "between",
@@ -530,6 +605,7 @@ function buildSummaryFingerprint(text) {
   );
 }
 
+// Measure how much two summary sections overlap.
 function summaryOverlap(first, second) {
   if (!first.size || !second.size) {
     return 0;
@@ -539,10 +615,12 @@ function summaryOverlap(first, second) {
   return sharedWords / Math.min(first.size, second.size);
 }
 
+// Count words for validation checks.
 function countWords(text) {
   return String(text || "").split(/\s+/).filter(Boolean).length;
 }
 
+// Check whether an existing summary still meets the current quality rules.
 function hasValidSummaryLengths(content = {}) {
   const normalized = {
     short: cleanSummaryOutput(content.short),
@@ -561,10 +639,12 @@ function hasValidSummaryLengths(content = {}) {
     && !hasFormattingNoise(normalized.detailed);
 }
 
+// Detect formatting artifacts that should not be shown in student-facing notes.
 function hasFormattingNoise(text) {
   return /[•●○▪▫]|\s\d+[\).]\s*($|[A-Z])|\s[.;:,]|:\.|\.\./g.test(String(text || ""));
 }
 
+// Detect vague headings that AI sometimes returns instead of real topic names.
 function hasGenericSummaryHeadings(text) {
   return String(text || "")
     .split(/\n+/)
