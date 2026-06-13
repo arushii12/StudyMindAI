@@ -48,10 +48,6 @@ const summarySchema = new mongoose.Schema(
       type: String,
       default: ""
     },
-    importantQuestions: {
-      type: [String],
-      default: []
-    },
     content: {
       short: {
         type: String,

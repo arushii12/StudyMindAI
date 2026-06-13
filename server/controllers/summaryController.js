@@ -1,16 +1,15 @@
 // Import summary service functions so the controller can forward Summary page requests.
-// The service handles MongoDB summaries, important questions, AI chat, and PDF export content.
+// The service handles MongoDB summaries, AI chat, and PDF export content.
 import {
   chatWithSummaryAssistant,
   deleteSummaryForUser,
   generateSummaryPdfContentForUser,
   generateSummaryForUser,
-  getQuestionsForSummary,
   getSummaryForUser
 } from "../services/summaryService.js";
 
 // Called when the Summary page loads.
-// It asks summaryService for the selected document summary and questions.
+// It asks summaryService for the selected document summary.
 export async function getSummary(req, res, next) {
   try {
     // Use query values to load the selected document summary for this user.
@@ -57,24 +56,10 @@ export async function regenerateSummary(req, res, next) {
   }
 }
 
-// Called when React needs important questions for a summary.
-export async function getSummaryQuestions(req, res, next) {
-  try {
-    // Load important questions only after the service checks the summary belongs to req.user.
-    const questions = await getQuestionsForSummary(req.user, req.params.id);
-    // Wrap questions in an object so the response shape is clear for React.
-    res.json({ questions });
-  } catch (error) {
-    // Send errors to the global error handler in server.js.
-    next(error);
-  }
-}
-
 // Called when the user deletes a summary.
-// The service also removes the stored important questions.
 export async function deleteSummary(req, res, next) {
   try {
-    // Delete the summary and linked questions only if they belong to this user.
+    // Delete the summary only if it belongs to this user.
     const result = await deleteSummaryForUser(req.user, req.params.id);
     // Return the service result back to React.
     res.json(result);

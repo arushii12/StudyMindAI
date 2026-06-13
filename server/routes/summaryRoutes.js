@@ -6,7 +6,6 @@ import {
   generateSummaryPdfContent,
   generateSummary,
   getSummary,
-  getSummaryQuestions,
   regenerateSummary
 } from "../controllers/summaryController.js";
 import { attachCurrentUser } from "../middleware/currentUser.js";
@@ -24,11 +23,9 @@ router.post("/pdf-content", attachCurrentUser, generateSummaryPdfContent);
 // Called by Study Assistant chat.
 // The service grounds the AI answer in uploaded notes and summary text.
 router.post("/:documentId/chat", attachCurrentUser, chatWithSummary);
-// Called when React needs important questions for a summary.
-router.get("/:id/questions", attachCurrentUser, getSummaryQuestions);
 // Called when the user regenerates an existing summary.
 router.post("/:id/regenerate", attachCurrentUser, regenerateSummary);
-// Called when deleting a summary and its stored questions.
+// Called when deleting a summary.
 router.delete("/:id", attachCurrentUser, deleteSummary);
 
 export default router;

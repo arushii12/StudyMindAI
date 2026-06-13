@@ -238,7 +238,6 @@ Requirements:
 * short must be 80 to 140 words.
 * medium must be 220 to 350 words.
 * detailed must be 500 to 700 words.
-* Generate 5 important exam-oriented questions from the same material.
 
 Return this JSON shape:
 {
@@ -246,8 +245,7 @@ Return this JSON shape:
     "short": "...",
     "medium": "...",
     "detailed": "..."
-  },
-  "questions": ["...", "...", "...", "...", "..."]
+  }
 }
 
 Content scope: ${context.scope || "single-document"}
@@ -366,8 +364,7 @@ Return JSON only in this exact shape:
       "heading": "Overview",
       "items": ["One concise revision point", "Another concise revision point"]
     }
-  ],
-  "importantQuestions": []
+  ]
 }
 
 Rules:
@@ -376,7 +373,6 @@ Rules:
 * Create a 2-3 page exam revision sheet when the source contains enough material.
 * Aim for roughly 700-950 words for normal-sized source material, which should format into about 2-3 A4 pages.
 * This must be a useful revision sheet, not a tiny summary or bare outline.
-* Do not include Important Questions.
 * Do not include any Q&A, practice questions, or answer section.
 * Use concise bullets and a revision-friendly structure.
 * Include a one-line Topic Overview, Key Concepts, Important Definitions, Important Facts, Comparison Points or compact comparison rows where useful, Formulae or Rules when present, Exam Keywords, Quick Recap, and Must-Remember Points.
@@ -387,7 +383,6 @@ Rules:
 * Do not use markdown formatting symbols such as *, **, #, ##, ###, or code fences.
 * Do not include markdown inside any JSON string.
 * Normalize technical capitalization, including IaaS, PaaS, SaaS, AWS, EC2, S3, IAM, CDN, VPC, DevOps, and CI/CD.
-* Return importantQuestions as an empty array.
 
 Document title: ${context.documentTitle || "Study Material"}
 Subject: ${context.subject || "General Studies"}
@@ -396,7 +391,7 @@ Source material:
 ${trimMaterial(summaryContent, 26000)}`;
 }
 
-// Build the prompt that asks AI for detailed PDF notes with sections and questions.
+// Build the prompt that asks AI for detailed PDF notes with sections.
 export function buildDetailedNotesPrompt(summaryContent, context = {}) {
   return `Create complete, polished study notes from the provided source material.
 
@@ -408,12 +403,6 @@ Return JSON only in this exact shape:
       "heading": "Overview",
       "items": ["A clear explanation in complete sentences"]
     }
-  ],
-  "importantQuestions": [
-    {
-      "question": "What is the concept?",
-      "answer": "A short answer supported by the source."
-    }
   ]
 }
 
@@ -423,10 +412,7 @@ Rules:
 * Target around 6-7 A4 pages when the source contains enough material.
 * Aim for roughly 1800-2200 words for normal-sized source material, but do not add filler to reach a page or word count.
 * Include Overview, Main Concepts, Detailed Explanations, Examples where useful, Important Points, and Key Takeaways / Recap.
-* Include 5-8 Important Questions in importantQuestions.
-* Give each question a concise 1-3 sentence answer, normally 35-75 words, only when the source supports it.
-* If the source does not confidently support an answer, return an empty answer string instead of guessing.
-* Keep Important Questions separate from the notes sections.
+* Do not include any Q&A, practice questions, or answer section.
 * Use complete, meaningful topic headings and full explanations.
 * Never use sentence fragments, product lists, examples, comparison cells, or phrases such as "Both Offer Resource", "Adjusts Instances Based", "Cloud Providers AWS", "Gmail Salesforce", or "Docker Kubernetes" as headings.
 * Convert such fragments into normal items under a nearby meaningful heading.

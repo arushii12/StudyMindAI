@@ -32,27 +32,24 @@ test("rejects accidental fragment headings", () => {
   assert.equal(normalizeSectionHeading("Cloud Service Models", "Study Notes"), "Cloud Service Models");
 });
 
-test("quick revision removes all important questions", () => {
+test("PDF notes remove question sections from exported notes", () => {
   const result = normalizePdfStudyNotes({
     title: "**Quick Revision PDF**",
     sections: [
       { heading: "Key Concepts", items: ["* Resource pooling shares resources."] },
       { heading: "Important Questions", items: ["What is resource pooling?"] }
-    ],
-    importantQuestions: [
-      { question: "What is resource pooling?", answer: "Resources are shared." }
     ]
   }, "quick");
 
-  assert.deepEqual(result.importantQuestions, []);
   assert.equal(result.sections.length, 1);
   assert.doesNotMatch(formatPdfNotesAsText(result.sections), /Important Questions|\*/);
 });
 
-test("detailed notes retain separated questions and short answers", () => {
+test("detailed notes ignore old question payloads", () => {
   const result = normalizePdfStudyNotes({
     sections: [
-      { heading: "Main Concepts", items: ["Rapid elasticity scales resources quickly."] }
+      { heading: "Main Concepts", items: ["Rapid elasticity scales resources quickly."] },
+      { heading: "Q&A", items: ["What is rapid elasticity?"] }
     ],
     importantQuestions: [
       {
@@ -62,12 +59,9 @@ test("detailed notes retain separated questions and short answers", () => {
     ]
   }, "detailed");
 
-  assert.equal(result.importantQuestions.length, 1);
-  assert.equal(result.importantQuestions[0].question, "Explain rapid elasticity.");
-  assert.equal(
-    result.importantQuestions[0].answer,
-    "Rapid elasticity scales cloud resources with workload demand."
-  );
+  assert.equal(result.sections.length, 1);
+  assert.equal(result.sections[0].heading, "Main Concepts");
+  assert.equal(result.importantQuestions, undefined);
 });
 
 // Prompt tests are important because prompt wording controls the shape of AI output.
@@ -76,13 +70,10 @@ test("quick and detailed prompts enforce distinct output goals", () => {
   const detailedPrompt = buildDetailedNotesPrompt("Source material");
 
   assert.match(quickPrompt, /2-3 page exam revision sheet/i);
-  assert.match(quickPrompt, /Do not include Important Questions/i);
-  assert.match(quickPrompt, /importantQuestions as an empty array/i);
+  assert.doesNotMatch(quickPrompt, /importantQuestions/i);
   assert.match(detailedPrompt, /6-7 A4 pages/i);
-  assert.match(detailedPrompt, /5-8 Important Questions/i);
-  assert.match(detailedPrompt, /concise 1-3 sentence answer/i);
-  assert.match(detailedPrompt, /35-75 words/i);
-  assert.match(detailedPrompt, /empty answer string instead of guessing/i);
+  assert.doesNotMatch(detailedPrompt, /importantQuestions/i);
+  assert.match(detailedPrompt, /Do not include any Q&A/i);
 });
 
 test("summary prompt keeps short and medium summaries scannable", () => {
@@ -98,4 +89,5 @@ test("summary prompt keeps short and medium summaries scannable", () => {
   assert.match(prompt, /5 to 7 meaningful sections/i);
   assert.match(prompt, /Do not use bullet points, numbered lists/i);
   assert.match(prompt, /complete paragraph/i);
+  assert.doesNotMatch(prompt, /"questions"/i);
 });

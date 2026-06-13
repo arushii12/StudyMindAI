@@ -39,7 +39,6 @@ const ALLOWED_SECTION_HEADINGS = new Map([
   ["important points", "Important Points"],
   ["detailed explanations", "Detailed Explanations"],
   ["examples", "Examples"],
-  ["important questions", "Important Questions"],
   ["key takeaways", "Key Takeaways"],
   ["key takeaways / recap", "Key Takeaways and Recap"],
   ["quick recap", "Quick Recap"],
@@ -118,12 +117,9 @@ export function normalizePdfStudyNotes(payload = {}, pdfType = "detailed") {
   // Convert each AI section into a heading plus clean item list.
   const rawSections = Array.isArray(payload.sections) ? payload.sections : [];
   const sections = rawSections
+    .filter((section) => !isQuestionSectionHeading(section?.heading || section?.title || section?.name))
     .map((section, index) => normalizeSection(section, index))
     .filter((section) => section.items.length);
-  // Quick revision PDFs should not include questions; detailed PDFs can.
-  const importantQuestions = pdfType === "quick"
-    ? []
-    : normalizeQuestions(payload.importantQuestions || payload.questions);
 
   // Support older AI output that returned notes as one text block.
   if (!sections.length) {
@@ -136,9 +132,13 @@ export function normalizePdfStudyNotes(payload = {}, pdfType = "detailed") {
   return {
     title: sanitizeAiText(payload.title, { preserveLines: false })
       || (pdfType === "quick" ? "Quick Revision PDF" : "Detailed Notes PDF"),
-    sections: mergeDuplicateSections(filteredSections),
-    importantQuestions
+    sections: mergeDuplicateSections(filteredSections)
   };
+}
+
+// Remove legacy AI sections that contain question content before heading fallback runs.
+function isQuestionSectionHeading(value) {
+  return /important questions?|q\s*&\s*a|questions?\s*(?:and|&)\s*answers?/i.test(String(value || ""));
 }
 
 // Convert structured sections into plain text for jsPDF export.
@@ -165,25 +165,6 @@ function normalizeSection(section, index) {
     .filter(Boolean);
 
   return { heading, items: [...new Set(items)] };
-}
-
-// Normalize detailed PDF questions into question/answer objects.
-function normalizeQuestions(questions) {
-  if (!Array.isArray(questions)) {
-    return [];
-  }
-
-  return questions
-    .map((item) => ({
-      question: sanitizeAiText(item?.question || item?.prompt || item, { preserveLines: false })
-        .replace(/^\s*(?:question|q)\s*\d*\s*[:.)-]?\s*/i, "")
-        .trim(),
-      answer: sanitizeAiText(item?.answer || "", { preserveLines: false })
-        .replace(/^\s*answer\s*[:.)-]?\s*/i, "")
-        .trim()
-    }))
-    .filter((item) => item.question)
-    .slice(0, 10);
 }
 
 // Parse older plain-text note output into section objects.

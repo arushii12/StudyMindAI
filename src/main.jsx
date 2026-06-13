@@ -3883,8 +3883,7 @@ function SummaryPage() {
           documentId: document?.id,
           length,
           pdfType: selectedPdfType,
-          summaryText: currentSummaryText,
-          questions: selectedPdfType === "detailed" ? questions.map((item) => item.question || item) : []
+          summaryText: currentSummaryText
         })
       });
       const data = await response.json();
@@ -3899,7 +3898,6 @@ function SummaryPage() {
         length,
         summaryText: data.notes,
         pdfSections: data.sections,
-        questions: data.importantQuestions?.length ? data.importantQuestions : questions,
         pdfType: selectedPdfType,
         generatedAt: data.meta?.generatedAt
       });
@@ -3990,7 +3988,6 @@ function SummaryPage() {
       setSummaryData((current) => ({
         ...current,
         summary: null,
-        questions: [],
         meta: {
           ...current.meta,
           hasSummary: false
@@ -4067,15 +4064,6 @@ function SummaryPage() {
     }
   }
 
-  // Sends an important question directly into AI Tutor.
-  function handleQuestionToChat(question) {
-    setIsChatExpanded(true);
-    setChatInput(question);
-    window.setTimeout(() => {
-      sendChatMessage(question);
-    }, 180);
-  }
-
   // Reuses an AI Tutor answer to ask for a shorter, exam, flashcard, or quiz version.
   function handleChatTransform(content, action) {
     const prompts = {
@@ -4093,7 +4081,7 @@ function SummaryPage() {
       <>
         <LoadingBanner
           title="Loading AI Summary"
-          detail="Fetching document summary and review material."
+          detail="Fetching document summary."
         />
         <SummarySkeleton />
       </>
@@ -4150,7 +4138,6 @@ function SummaryPage() {
 
   const document = summaryData.document;
   const summary = summaryData.summary;
-  const questions = summaryData.questions || [];
   const uploadedDate = formatDate(document.uploadedAt);
   const updatedLabel = formatRelativeTimestamp(summary?.updatedAt || document.updatedAt);
 
@@ -4407,33 +4394,6 @@ function SummaryPage() {
           status={chatStatus}
         />
       )}
-
-      <section className="questions-card">
-        <div className="summary-card-heading">
-          <div>
-            <span className="summary-section-label">Review Prep</span>
-            <h2>Important Questions</h2>
-          </div>
-        </div>
-
-        {questions.length ? (
-          <div className="question-list">
-            {questions.slice(0, 5).map((item, index) => (
-              <button className="question-row" type="button" onClick={() => handleQuestionToChat(item.question)} key={item.id}>
-                <span className="question-number">{index + 1}</span>
-                <strong>{cleanDisplaySentence(item.question)}</strong>
-                <Send size={17} />
-              </button>
-            ))}
-          </div>
-        ) : (
-          <EmptyPanel
-            title="Questions will appear after summary generation."
-            text="Generate a summary to store important revision questions for this document."
-          />
-        )}
-
-      </section>
 
       <section className="summary-actions-grid">
         <a className="summary-action-card" href={summaryData.links?.flashcards || "#flashcards"} onClick={handleGenerateFlashcards}>
@@ -7029,7 +6989,6 @@ function SummarySkeleton() {
     <div className="summary-page">
       <div className="summary-header skeleton-panel" />
       <div className="summary-card skeleton-panel" />
-      <div className="questions-card skeleton-panel" />
       <section className="summary-actions-grid">
         <div className="summary-action-card skeleton-panel" />
         <div className="summary-action-card skeleton-panel" />
@@ -7905,7 +7864,6 @@ function exportSummaryPdf({
   length,
   summaryText,
   pdfSections,
-  questions,
   pdfType = "detailed",
   generatedAt
 }) {
@@ -7918,7 +7876,7 @@ function exportSummaryPdf({
   const generatedDate = generatedAt || summary?.updatedAt || summary?.generatedAt || new Date().toISOString();
   const pdfTypeLabel = pdfType === "quick" ? "Quick Revision PDF" : "Detailed Notes PDF";
   const sections = normalizePdfSections(pdfSections, summaryText, length)
-    .filter((section) => pdfType !== "quick" || !/important questions?|q\s*&\s*a/i.test(section.title));
+    .filter((section) => !/important questions?|q\s*&\s*a/i.test(section.title));
   let cursorY = margin;
 
   // Adds StudyMind branding and page numbers to each PDF page.
@@ -8078,52 +8036,6 @@ function exportSummaryPdf({
     cursorY += rowHeight + 5;
   }
 
-  // Adds important questions and answers to detailed PDFs.
-  function writeQuestionAnswer(item, index) {
-    const question = cleanDisplaySentence(item?.question || item);
-    const answer = cleanDisplaySentence(item?.answer || "");
-
-    if (!question) {
-      return;
-    }
-
-    ensureSpace(answer ? 92 : 54);
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(10);
-    pdf.setTextColor(92, 106, 134);
-    pdf.text(`Question ${index + 1}`, margin, cursorY);
-    cursorY += 16;
-
-    writeWrappedText(question, {
-      fontSize: 11,
-      lineHeight: 16,
-      color: [10, 45, 122],
-      style: "bold"
-    });
-    cursorY += 8;
-
-    if (answer) {
-      ensureSpace(38);
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(10);
-      pdf.setTextColor(92, 106, 134);
-      pdf.text("Answer", margin, cursorY);
-      cursorY += 16;
-      writeWrappedText(answer, {
-        fontSize: 10.5,
-        lineHeight: 16,
-        color: [35, 45, 70],
-        justify: true
-      });
-    }
-
-    cursorY += 10;
-    ensureSpace(18);
-    pdf.setDrawColor(224, 229, 239);
-    pdf.line(margin, cursorY, pageWidth - margin, cursorY);
-    cursorY += 20;
-  }
-
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(24);
   pdf.setTextColor(10, 45, 122);
@@ -8162,23 +8074,6 @@ function exportSummaryPdf({
     section.items.forEach(writeBullet);
     cursorY += pdfType === "quick" ? 5 : 9;
   });
-
-  const shouldAppendQuestions = pdfType !== "quick";
-
-  if (shouldAppendQuestions) {
-    writeSectionTitle("Important Questions");
-  }
-
-  if (shouldAppendQuestions && questions?.length) {
-    questions.slice(0, 10).forEach(writeQuestionAnswer);
-  } else if (shouldAppendQuestions) {
-    writeWrappedText("No important questions are available for this summary yet.", {
-      fontSize: 11,
-      lineHeight: 17,
-      color: [92, 106, 134],
-      justify: true
-    });
-  }
 
   addFooter();
   pdf.save(buildSummaryPdfFilename(title, pdfType));

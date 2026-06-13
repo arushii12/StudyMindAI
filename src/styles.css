@@ -4127,8 +4127,7 @@ button {
 }
 
 .summary-card,
-.study-assistant-card,
-.questions-card {
+.study-assistant-card {
   border: 1px solid rgba(245, 179, 1, 0.62);
   border-radius: 16px;
   background: var(--card-bg);
@@ -4628,48 +4627,6 @@ button {
 .study-chat-input-row button:disabled {
   cursor: default;
   opacity: 0.58;
-}
-
-.question-list {
-  display: grid;
-  gap: 10px;
-}
-
-.question-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  min-height: 62px;
-  border: 1px solid rgba(184, 196, 224, 0.18);
-  border-radius: 14px;
-  background: var(--secondary-bg);
-  padding: 12px 14px;
-  color: var(--text);
-  text-decoration: none;
-  text-align: left;
-  width: 100%;
-}
-
-.question-row strong {
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.question-row svg {
-  color: var(--gold);
-}
-
-.question-number {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(245, 179, 1, 0.18);
-  color: var(--gold);
-  font-size: 13px;
-  font-weight: 900;
 }
 
 .view-all-link {
@@ -6622,7 +6579,6 @@ button {
 
   .summary-header,
   .summary-card,
-  .questions-card,
   .summary-action-card,
   .quiz-header,
   .quiz-empty-card,

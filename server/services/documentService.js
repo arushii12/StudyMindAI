@@ -15,7 +15,6 @@ import Flashcard from "../models/Flashcard.js";
 import FlashcardProgress from "../models/FlashcardProgress.js";
 import FlashcardSet from "../models/FlashcardSet.js";
 import Folder from "../models/Folder.js";
-import ImportantQuestion from "../models/ImportantQuestion.js";
 import MarkedQuestion from "../models/MarkedQuestion.js";
 import Quiz from "../models/Quiz.js";
 import QuizAttempt from "../models/QuizAttempt.js";
@@ -461,7 +460,6 @@ async function deleteDocumentLinkedData(userId, documentIds) {
   // Delete every dependent collection in parallel.
   await Promise.all([
     Summary.deleteMany({ userId, documentId: { $in: documentIds } }),
-    ImportantQuestion.deleteMany({ userId, documentId: { $in: documentIds } }),
     SavedSummary.deleteMany({ userId, documentId: { $in: documentIds } }),
     Quiz.deleteMany({ userId, documentId: { $in: documentIds } }),
     QuizAttempt.deleteMany({ userId, documentId: { $in: documentIds } }),

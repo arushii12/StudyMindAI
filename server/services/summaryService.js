@@ -4,8 +4,6 @@ import mongoose from "mongoose";
 import Document from "../models/Document.js";
 // Summary stores generated short, medium, and detailed notes.
 import Summary from "../models/Summary.js";
-// ImportantQuestion stores AI-generated revision questions for a summary.
-import ImportantQuestion from "../models/ImportantQuestion.js";
 // AI service generates summaries, chat answers, and PDF-ready notes.
 import { generatePdfStudyNotes, generateStudyAssistantAnswer, generateSummary } from "./aiService.js";
 // Used to stop summary work cleanly when MongoDB is unavailable.
@@ -20,7 +18,7 @@ import {
 } from "./studyContentFormatter.js";
 
 // Called when the Summary page opens.
-// It loads the saved summary and questions for the selected document.
+// It loads the saved summary for the selected document.
 export async function getSummaryForUser(user, options = {}) {
   // Summaries are stored per user in MongoDB.
   if (!user?.id || !isDatabaseConnected()) {
@@ -46,7 +44,6 @@ export async function getSummaryForUser(user, options = {}) {
     return {
       document: mapDocument(document),
       summary: null,
-      questions: [],
       links: buildLinks(document._id),
       meta: {
         hasSummary: false,
@@ -55,12 +52,7 @@ export async function getSummaryForUser(user, options = {}) {
     };
   }
 
-  // Load questions in the order AI generated them.
-  const questions = await ImportantQuestion.find({ summaryId: summary._id })
-    .sort({ order: 1 })
-    .lean();
-
-  return mapSummaryResponse(document, summary, questions, options.length);
+  return mapSummaryResponse(document, summary, options.length);
 }
 
 // Called when the user generates or regenerates a summary.
@@ -96,7 +88,7 @@ export async function generateSummaryForUser(user, payload = {}) {
     throw error;
   }
 
-  // Ask AI for structured summary content and important questions.
+  // Ask AI for structured summary content.
   const generated = await generateSummary(sourceText, {
     documentTitle: selectedSource?.title || getDocumentDisplayName(document),
     subject: selectedSource?.subject || document.subject,
@@ -104,7 +96,6 @@ export async function generateSummaryForUser(user, payload = {}) {
   });
   // Validate AI output before saving it.
   const content = validateSummaryContent(generated.content);
-  const generatedQuestions = validateImportantQuestions(generated.questions);
 
   // Upsert one summary per user/document so regeneration replaces old content.
   const summary = await Summary.findOneAndUpdate(
@@ -118,7 +109,6 @@ export async function generateSummaryForUser(user, payload = {}) {
       activeLength: length,
       summaryLength: length,
       summaryText: content[length],
-      importantQuestions: generatedQuestions,
       content,
       source: "generated",
       generatedAt: new Date()
@@ -134,42 +124,7 @@ export async function generateSummaryForUser(user, payload = {}) {
   // Mark the document as having a generated summary.
   await Document.findByIdAndUpdate(document._id, documentUpdate);
 
-  // Replace old important questions with the latest AI-generated set.
-  await ImportantQuestion.deleteMany({ summaryId: summary._id });
-  const questions = await ImportantQuestion.insertMany(
-    generatedQuestions.map((question, index) => ({
-      userId: user.id,
-      documentId: document._id,
-      summaryId: summary._id,
-      question,
-      order: index + 1
-    }))
-  );
-
-  return mapSummaryResponse(document, summary.toObject(), questions, length);
-}
-
-// Called when React needs questions for an existing summary.
-export async function getQuestionsForSummary(user, summaryId) {
-  // Validate summary id before querying MongoDB.
-  if (!mongoose.Types.ObjectId.isValid(summaryId)) {
-    const error = new Error("Invalid summary id.");
-    error.status = 400;
-    throw error;
-  }
-
-  if (!user?.id || !isDatabaseConnected()) {
-    const error = new Error("MongoDB is not connected. Important questions require stored summaries.");
-    error.status = 503;
-    throw error;
-  }
-
-  // Query by userId so one user cannot read another user's questions.
-  const questions = await ImportantQuestion.find({ userId: user.id, summaryId })
-    .sort({ order: 1 })
-    .lean();
-
-  return questions.map(mapQuestion);
+  return mapSummaryResponse(document, summary.toObject(), length);
 }
 
 // Called when the user deletes a summary.
@@ -308,17 +263,10 @@ export async function generateSummaryPdfContentForUser(user, payload = {}) {
     throw error;
   }
 
-  // Detailed PDFs can include important questions; quick revision PDFs should not.
-  const questionContext = pdfType === "detailed"
-    ? normalizePdfQuestions(payload.questions)
-    : [];
   const sourceMaterial = String(document.extractedText || "").trim();
   const sourceParts = [
     `Detailed AI summary:\n${summaryText}`,
-    sourceMaterial ? `Original extracted study material:\n${sourceMaterial}` : "",
-    questionContext.length
-      ? `Important questions already identified from this material:\n${questionContext.map((question, index) => `Q${index + 1}. ${question}`).join("\n")}`
-      : ""
+    sourceMaterial ? `Original extracted study material:\n${sourceMaterial}` : ""
   ].filter(Boolean);
   const pdfSourceText = sourceParts.join("\n\n");
 
@@ -343,7 +291,6 @@ export async function generateSummaryPdfContentForUser(user, payload = {}) {
     title: normalizedPdf.title,
     notes,
     sections: normalizedPdf.sections,
-    importantQuestions: normalizedPdf.importantQuestions,
     document: mapDocument(document),
     meta: {
       generatedAt: new Date().toISOString()
@@ -372,7 +319,7 @@ async function findSelectedDocument(userId, documentId) {
 }
 
 // Build the full response shape consumed by the Summary page.
-function mapSummaryResponse(document, summary, questions, requestedLength) {
+function mapSummaryResponse(document, summary, requestedLength) {
   const activeLength = normalizeLength(requestedLength || summary.activeLength);
   const content = normalizeStoredSummaryContent(summary);
   // Pick the requested summary length, with fallbacks for older records.
@@ -396,7 +343,6 @@ function mapSummaryResponse(document, summary, questions, requestedLength) {
       generatedAt: summary.generatedAt,
       updatedAt: summary.updatedAt
     },
-    questions: questions.map(mapQuestion),
     links: buildLinks(document._id),
     meta: {
       hasSummary: true,
@@ -447,15 +393,6 @@ function getDocumentDisplayName(document) {
     .trim() || "Study Material";
 }
 
-// Convert an ImportantQuestion record into the response shape.
-function mapQuestion(question) {
-  return {
-    id: question._id?.toString?.() || `question-${question.order}`,
-    order: question.order,
-    question: sanitizeAiText(question.question, { preserveLines: false })
-  };
-}
-
 // Keep only recent chat history and remove huge message content before prompting AI.
 function normalizeChatHistory(history) {
   if (!Array.isArray(history)) {
@@ -487,16 +424,6 @@ function normalizeLength(length = "short") {
 // Normalize requested PDF export type.
 function normalizePdfType(pdfType = "detailed") {
   return ["quick", "detailed"].includes(pdfType) ? pdfType : "detailed";
-}
-
-// Clean important questions before adding them to detailed PDF context.
-function normalizePdfQuestions(questions = []) {
-  return Array.isArray(questions)
-    ? questions
-        .map((question) => String(question?.question || question || "").replace(/\s+/g, " ").trim())
-        .filter(Boolean)
-        .slice(0, 8)
-    : [];
 }
 
 // Validate summary JSON returned by AI before saving it.
@@ -533,22 +460,6 @@ function validateSummaryContent(content = {}) {
   }
 
   return normalized;
-}
-
-// Validate AI-generated important questions before saving them.
-function validateImportantQuestions(questions) {
-  const values = Array.isArray(questions)
-    ? questions.map((question) => String(question || "").trim()).filter(Boolean)
-    : [];
-  const uniqueQuestions = [...new Set(values)].slice(0, 5);
-
-  if (uniqueQuestions.length < 3) {
-    const error = new Error("AI returned too few important questions. Please regenerate.");
-    error.status = 422;
-    throw error;
-  }
-
-  return uniqueQuestions;
 }
 
 // Clean one summary text block from AI.
