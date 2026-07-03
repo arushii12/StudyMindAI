@@ -2,10 +2,8 @@
 import mongoose from "mongoose";
 // Document stores uploaded PDFs and pasted text used as flashcard source material.
 import Document from "../models/Document.js";
-// Flashcard stores searchable individual cards for dashboard and review features.
+// Flashcard stores searchable individual cards for dashboard features.
 import Flashcard from "../models/Flashcard.js";
-// FlashcardProgress stores the learner's current card and review history.
-import FlashcardProgress from "../models/FlashcardProgress.js";
 // FlashcardSet stores one complete generated deck.
 import FlashcardSet from "../models/FlashcardSet.js";
 // Summary is reused as a cleaner source when a summary already exists for a document.
@@ -25,7 +23,7 @@ const CARD_MAX = 18;
 const DEFAULT_CARD_COUNT = 12;
 
 // Called when the Flashcards page opens.
-// It loads an existing deck and progress instead of calling AI immediately.
+// It loads an existing deck instead of calling AI immediately.
 export async function getFlashcardsForUser(user, options = {}) {
   // Flashcards are user-specific and stored in MongoDB, so both are required.
   if (!user?.id || !isDatabaseConnected()) {
@@ -80,7 +78,6 @@ export async function getFlashcardsForUser(user, options = {}) {
     return {
       document: mapDocument(document),
       flashcardSet: null,
-      progress: null,
       meta: {
         hasFlashcards: false,
         reused: false
@@ -88,14 +85,10 @@ export async function getFlashcardsForUser(user, options = {}) {
     };
   }
 
-  // Load saved progress or create it the first time this deck is opened.
-  const progress = await getOrCreateProgress(user.id, set._id, set.cards.length);
-
   // Return mapped data in the exact shape React renders.
   return {
     document: mapDocument(document),
     flashcardSet: mapFlashcardSet(set),
-    progress: mapProgress(progress),
     meta: {
       hasFlashcards: true,
       reused: true
@@ -157,7 +150,7 @@ export async function generateFlashcardsForUser(user, payload = {}) {
     topic: source.subject || document.subject,
     source: source.type,
     aiModel: getActiveAiModelName(),
-    // Add stable order numbers so progress history can point to the same card later.
+    // Add stable order numbers so the frontend can render cards in a predictable order.
     cards: validCards.map((card, index) => ({
       ...card,
       order: index + 1
@@ -167,7 +160,7 @@ export async function generateFlashcardsForUser(user, payload = {}) {
 
   // Remove old searchable card records for this document before inserting the new set.
   await Flashcard.deleteMany({ userId: user.id, documentId: document._id });
-  // Save individual card records for dashboard and review queries.
+  // Save individual card records for dashboard queries.
   await Flashcard.insertMany(
     set.cards.map((card) => ({
       userId: user.id,
@@ -175,32 +168,14 @@ export async function generateFlashcardsForUser(user, payload = {}) {
       subject: source.subject || document.subject,
       topic: card.topic || source.subject || document.subject,
       front: card.front,
-      back: card.back,
-      mastered: false,
-      reviewedAt: null
+      back: card.back
     }))
   );
 
-  // Create or reset the learner's progress for this new deck.
-  const progress = await FlashcardProgress.findOneAndUpdate(
-    { userId: user.id, flashcardSetId: set._id },
-    {
-      userId: user.id,
-      flashcardSetId: set._id,
-      currentCardIndex: 0,
-      masteredCount: 0,
-      learningCount: 0,
-      reviewHistory: [],
-      lastStudiedAt: new Date()
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
-
-  // Return the saved deck and progress to React.
+  // Return the saved deck to React.
   return {
     document: mapDocument(document),
     flashcardSet: mapFlashcardSet(set.toObject()),
-    progress: mapProgress(progress),
     meta: {
       hasFlashcards: true,
       reused: false
@@ -208,115 +183,8 @@ export async function generateFlashcardsForUser(user, payload = {}) {
   };
 }
 
-// Called when the learner rates a card.
-// It appends review history and recalculates mastery counts.
-export async function saveFlashcardReviewForUser(user, setId, payload = {}) {
-  if (!user?.id || !isDatabaseConnected()) {
-    const error = new Error("MongoDB is not connected. Flashcard review progress requires persistence.");
-    error.status = 503;
-    throw error;
-  }
-
-  // Validate the deck id before querying MongoDB.
-  if (!mongoose.Types.ObjectId.isValid(setId)) {
-    const error = new Error("Invalid flashcard set id.");
-    error.status = 400;
-    throw error;
-  }
-
-  // Find the deck only if it belongs to the current user.
-  const set = await FlashcardSet.findOne({ _id: setId, userId: user.id });
-
-  if (!set) {
-    const error = new Error("Flashcard set not found.");
-    error.status = 404;
-    throw error;
-  }
-
-  // Convert old rating names so progress math uses the current values.
-  await sanitizeLegacyFlashcardRatings(user.id, set._id);
-
-  // Keep the current card index inside the deck range.
-  const currentCardIndex = clampIndex(payload.currentCardIndex, set.cards.length);
-  // Accept only supported ratings before writing review history.
-  const rating = normalizeRating(payload.rating);
-  // Convert the reviewed card into the 1-based order stored in the deck.
-  const cardOrder = Math.min(set.cards.length, Math.max(1, Number(payload.cardOrder || currentCardIndex + 1)));
-  // Always save the latest position and study timestamp.
-  const update = {
-    $set: {
-      currentCardIndex,
-      lastStudiedAt: new Date()
-    }
-  };
-
-  // Add a history row only when React sent a valid rating.
-  if (rating) {
-    update.$push = {
-      reviewHistory: {
-        cardOrder,
-        rating,
-        reviewedAt: new Date()
-      }
-    };
-  }
-
-  // Update existing progress or create it if the deck is reviewed for the first time.
-  const progress = await FlashcardProgress.findOneAndUpdate(
-    { userId: user.id, flashcardSetId: set._id },
-    update,
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
-
-  // Recalculate counts from history so they stay consistent with saved reviews.
-  const history = progress.reviewHistory || [];
-  progress.masteredCount = new Set(history.filter((item) => item.rating === "got-it").map((item) => item.cardOrder)).size;
-  progress.learningCount = new Set(history.filter((item) => item.rating !== "got-it").map((item) => item.cardOrder)).size;
-  await progress.save();
-
-  // Update deck activity time for dashboard Continue Learning cards.
-  set.lastStudiedAt = new Date();
-  await set.save();
-
-  return {
-    progress: mapProgress(progress)
-  };
-}
-
-// Called when React asks for progress without adding a new review.
-export async function getFlashcardProgressForUser(user, setId) {
-  if (!user?.id || !isDatabaseConnected()) {
-    const error = new Error("MongoDB is not connected. Flashcard progress requires persistence.");
-    error.status = 503;
-    throw error;
-  }
-
-  // Validate the deck id before querying MongoDB.
-  if (!mongoose.Types.ObjectId.isValid(setId)) {
-    const error = new Error("Invalid flashcard set id.");
-    error.status = 400;
-    throw error;
-  }
-
-  // Confirm the deck belongs to this user before exposing progress.
-  const set = await FlashcardSet.findOne({ _id: setId, userId: user.id }).lean();
-
-  if (!set) {
-    const error = new Error("Flashcard set not found.");
-    error.status = 404;
-    throw error;
-  }
-
-  // Load existing progress or create default progress for this deck.
-  const progress = await getOrCreateProgress(user.id, set._id, set.cards.length);
-
-  return {
-    progress: mapProgress(progress)
-  };
-}
-
 // Called when the user deletes a flashcard deck.
-// It removes the deck and its saved progress for the current user.
+// It removes the generated deck for the current user.
 export async function deleteFlashcardSetForUser(user, setId) {
   if (!user?.id || !isDatabaseConnected()) {
     const error = new Error("MongoDB is not connected. Flashcards require stored documents.");
@@ -339,9 +207,6 @@ export async function deleteFlashcardSetForUser(user, setId) {
     error.status = 404;
     throw error;
   }
-
-  // Remove progress rows linked to the deleted deck.
-  await FlashcardProgress.deleteMany({ userId: user.id, flashcardSetId: setId });
 
   return {
     deletedFlashcardSetId: setId,
@@ -469,32 +334,6 @@ function normalizeCard(card) {
   return normalized;
 }
 
-// Load progress for a deck or create it when the deck is opened first time.
-async function getOrCreateProgress(userId, setId, cardCount) {
-  await sanitizeLegacyFlashcardRatings(userId, setId);
-
-  // upsert creates a default progress row without duplicating existing progress.
-  return FlashcardProgress.findOneAndUpdate(
-    { userId, flashcardSetId: setId },
-    {
-      $setOnInsert: {
-        userId,
-        flashcardSetId: setId,
-        currentCardIndex: 0,
-        masteredCount: 0,
-        learningCount: 0,
-        reviewHistory: [],
-        lastStudiedAt: null
-      }
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  ).then((progress) => {
-    // Clamp old saved indexes in case the deck size changed.
-    progress.currentCardIndex = clampIndex(progress.currentCardIndex, cardCount);
-    return progress.save();
-  });
-}
-
 // Convert a MongoDB flashcard deck into the response shape React renders.
 function mapFlashcardSet(set) {
   return {
@@ -516,17 +355,6 @@ function mapFlashcardSet(set) {
     })),
     generatedAt: set.generatedAt,
     lastStudiedAt: set.lastStudiedAt
-  };
-}
-
-// Convert progress into a small response object for the frontend.
-function mapProgress(progress) {
-  return {
-    currentCardIndex: progress.currentCardIndex || 0,
-    masteredCount: progress.masteredCount || 0,
-    learningCount: progress.learningCount || 0,
-    lastStudiedAt: progress.lastStudiedAt,
-    reviewHistory: normalizeReviewHistory(progress.reviewHistory || [])
   };
 }
 
@@ -562,41 +390,6 @@ function normalizeCardCount(count) {
   }
 
   return Math.min(CARD_MAX, Math.max(CARD_MIN, Math.round(parsed)));
-}
-
-// Convert ratings from React into values allowed by the schema.
-function normalizeRating(rating) {
-  const normalized = String(rating || "").toLowerCase();
-  return ["again", "got-it"].includes(normalized) ? normalized : "";
-}
-
-// Update old "almost" ratings to the current "got-it" value.
-// This keeps older progress data compatible with the current schema enum.
-async function sanitizeLegacyFlashcardRatings(userId, setId) {
-  await FlashcardProgress.updateOne(
-    { userId, flashcardSetId: setId, "reviewHistory.rating": "almost" },
-    { $set: { "reviewHistory.$[item].rating": "got-it" } },
-    { arrayFilters: [{ "item.rating": "almost" }] }
-  );
-}
-
-// Normalize review history before sending it to React.
-function normalizeReviewHistory(history) {
-  return history.map((item) => ({
-    cardOrder: item.cardOrder,
-    rating: item.rating === "almost" ? "got-it" : item.rating,
-    reviewedAt: item.reviewedAt
-  }));
-}
-
-// Keep card indexes inside the available deck range.
-function clampIndex(index, count) {
-  if (!count) {
-    return 0;
-  }
-
-  const parsed = Number(index || 0);
-  return Math.min(count - 1, Math.max(0, Number.isFinite(parsed) ? Math.round(parsed) : 0));
 }
 
 // Count words so validation can reject very short or oversized AI output.

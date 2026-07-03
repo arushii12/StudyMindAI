@@ -1,7 +1,7 @@
 // Import Mongoose so this file can describe individual flashcard records.
 import mongoose from "mongoose";
 
-// Flashcard stores one card in a form that dashboard and review queries can search easily.
+// Flashcard stores one card in a form that dashboard queries can search easily.
 // Full generated decks are stored separately in FlashcardSet.
 const flashcardSchema = new mongoose.Schema(
   {
@@ -34,14 +34,6 @@ const flashcardSchema = new mongoose.Schema(
     back: {
       type: String,
       required: true
-    },
-    mastered: {
-      type: Boolean,
-      default: false
-    },
-    reviewedAt: {
-      type: Date,
-      default: null
     }
   },
   { timestamps: true }
@@ -49,8 +41,8 @@ const flashcardSchema = new mongoose.Schema(
 
 // Speed up dashboard queries that group cards by user and subject.
 flashcardSchema.index({ userId: 1, subject: 1 });
-// Speed up review queries that need the most recently studied cards.
-flashcardSchema.index({ userId: 1, reviewedAt: -1 });
+// Speed up dashboard queries that need recently generated cards.
+flashcardSchema.index({ userId: 1, createdAt: -1 });
 
 // Export the model used when saving searchable flashcard records.
 export default mongoose.model("Flashcard", flashcardSchema);

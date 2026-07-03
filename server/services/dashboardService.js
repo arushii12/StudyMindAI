@@ -2,7 +2,7 @@
 import Document from "../models/Document.js";
 // QuizAttempt powers score averages, quiz trends, and weak-topic insights.
 import QuizAttempt from "../models/QuizAttempt.js";
-// Flashcard records power generated-card and review activity stats.
+// Flashcard records power generated-card dashboard stats.
 import Flashcard from "../models/Flashcard.js";
 // DailyGoal stores each user's selected study or quiz target.
 import DailyGoal from "../models/DailyGoal.js";
@@ -316,20 +316,14 @@ export async function getDashboardData(user) {
         }
       }
     ]),
-    // Group flashcard activity by subject for progress cards.
+    // Group generated flashcards by subject for progress cards.
     Flashcard.aggregate([
       { $match: { userId: userObjectId(user.id) } },
       {
         $group: {
           _id: "$subject",
           cards: { $sum: 1 },
-          mastered: {
-            $sum: { $cond: ["$mastered", 1, 0] }
-          },
-          reviewed: {
-            $sum: { $cond: [{ $ne: ["$reviewedAt", null] }, 1, 0] }
-          },
-          lastReviewedAt: { $max: "$reviewedAt" }
+          lastGeneratedAt: { $max: "$createdAt" }
         }
       }
     ]),
@@ -860,7 +854,7 @@ function buildContinueLearning(subjectActivity, summaryActivity, topicPerformanc
       subject: subject._id,
       documents: subject.documents || 0,
       summaries: 0,
-      flashcardsReviewed: 0,
+      flashcardsGenerated: 0,
       quizAttempts: 0,
       progress: 0,
       lastActivityAt: subject.latestDocumentActivityAt,
@@ -890,21 +884,21 @@ function buildContinueLearning(subjectActivity, summaryActivity, topicPerformanc
     cardsBySubject.set(subject._id, existing);
   });
 
-  // Merge flashcard review activity into subject cards.
+  // Merge generated flashcard activity into subject cards.
   flashcardActivity.forEach((subject) => {
     const existing = cardsBySubject.get(subject._id) || {
       subject: subject._id,
       progress: 0,
-      lastActivityAt: subject.lastReviewedAt,
+      lastActivityAt: subject.lastGeneratedAt,
       detail: "Flashcards ready",
-      status: "Flashcards reviewed"
+      status: "Flashcards ready"
     };
 
     existing.flashcards = subject.cards || 0;
-    existing.flashcardsReviewed = subject.reviewed || 0;
-    existing.lastFlashcardsReviewedAt = subject.lastReviewedAt;
-    existing.lastActivityAt = latestDate(existing.lastActivityAt, subject.lastReviewedAt);
-    existing.status = subject.reviewed > 0 ? "Flashcards reviewed" : existing.status || "Flashcards ready";
+    existing.flashcardsGenerated = subject.cards || 0;
+    existing.lastFlashcardsGeneratedAt = subject.lastGeneratedAt;
+    existing.lastActivityAt = latestDate(existing.lastActivityAt, subject.lastGeneratedAt);
+    existing.status = subject.cards > 0 ? "Flashcards ready" : existing.status || "Flashcards ready";
     cardsBySubject.set(subject._id, existing);
   });
 
@@ -1019,7 +1013,7 @@ function calculateActionProgress(subject) {
 
   const completedActions = [
     subject.summaries > 0,
-    subject.flashcardsReviewed > 0,
+    subject.flashcardsGenerated > 0,
     subject.quizAttempts > 0
   ].filter(Boolean).length;
 
@@ -1036,8 +1030,8 @@ function progressStatus(subject) {
     return "Quiz attempted";
   }
 
-  if (subject.flashcardsReviewed > 0) {
-    return "Flashcards reviewed";
+  if (subject.flashcardsGenerated > 0) {
+    return "Flashcards ready";
   }
 
   if (subject.summaries > 0) {

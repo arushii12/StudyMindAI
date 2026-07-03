@@ -1701,8 +1701,36 @@ button {
   width: min(100%, 210px);
 }
 
+.move-folder-dropdown .goal-dropdown-menu {
+  border-color: rgba(255, 248, 240, 0.28);
+  background: #071a4d;
+  box-shadow: 0 16px 36px rgba(2, 11, 45, 0.42);
+}
+
+.move-folder-dropdown .goal-dropdown-menu button {
+  color: #fff8f0;
+}
+
+.move-folder-dropdown .goal-dropdown-menu button:hover,
+.move-folder-dropdown .goal-dropdown-menu button.selected {
+  background: rgba(59, 130, 246, 0.42);
+  color: #fff8f0;
+}
+
 .pdf-row-actions .move-folder-dropdown {
   flex: 0 0 170px;
+}
+
+.pdf-row-actions .move-folder-dropdown.is-open {
+  z-index: 90;
+}
+
+.pdf-row-actions .move-folder-dropdown .goal-dropdown-menu {
+  min-width: 170px;
+}
+
+.pdf-row-actions .move-folder-dropdown .goal-dropdown-menu button {
+  min-height: 38px;
 }
 
 .progress-range-dropdown {
@@ -3107,6 +3135,11 @@ button {
 
 .pdf-table tr.selected {
   background: rgba(59, 130, 246, 0.16);
+}
+
+.pdf-table tbody tr:has(.move-folder-dropdown.is-open) {
+  position: relative;
+  z-index: 4;
 }
 
 .pdf-table .pdf-checkbox-cell {
@@ -5898,109 +5931,8 @@ button {
   transform: rotateY(-360deg);
 }
 
-.deck-complete-card {
-  display: grid;
-  grid-column: 2;
-  width: min(820px, 100%);
-  min-height: 420px;
-  align-content: center;
-  justify-self: center;
-  gap: 16px;
-  border: 1px solid rgba(245, 179, 1, 0.68);
-  border-radius: 20px;
-  background: var(--card-bg);
-  padding: clamp(26px, 4vw, 48px);
-  text-align: center;
-  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.25);
-}
-
-.deck-complete-card h2,
-.deck-complete-card strong,
-.deck-complete-card p {
-  margin: 0;
-}
-
-.deck-complete-card h2 {
-  color: var(--gold);
-  font-size: clamp(28px, 3vw, 38px);
-  line-height: 1.1;
-}
-
-.deck-complete-card > strong {
-  color: #fff8f0;
-  font-size: clamp(20px, 2vw, 26px);
-  font-weight: 900;
-}
-
-.deck-readiness {
-  justify-self: center;
-  border: 1px solid rgba(255, 248, 240, 0.22);
-  border-radius: 999px;
-  background: rgba(6, 27, 79, 0.72);
-  padding: 8px 13px;
-  font-size: 14px;
-  font-weight: 900;
-}
-
-.deck-complete-card.high .deck-readiness {
-  color: #4ade80;
-}
-
-.deck-complete-card.medium .deck-readiness {
-  color: #facc15;
-}
-
-.deck-complete-card.low .deck-readiness {
-  color: #fb923c;
-}
-
-.deck-rating-counts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, max-content));
-  justify-content: center;
-  gap: 8px 18px;
-}
-
-.deck-rating-counts span {
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 850;
-}
-
-.deck-complete-card p {
-  max-width: 620px;
-  justify-self: center;
-  color: var(--muted);
-  font-size: 16px;
-  font-weight: 750;
-  line-height: 1.55;
-}
-
-.deck-complete-card p a {
-  color: var(--gold);
-  font-weight: 900;
-  text-decoration: none;
-}
-
-.deck-complete-card p a:hover {
-  text-decoration: underline;
-}
-
-.deck-complete-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-}
-
-.deck-complete-actions .summary-primary-action {
-  min-width: 132px;
-  text-decoration: none;
-}
-
 .flashcard-controls {
   display: grid;
-  gap: 16px;
   padding: 18px;
 }
 
@@ -6016,51 +5948,6 @@ button {
   height: 100%;
   border-radius: inherit;
   background: var(--gold);
-}
-
-.flash-review-buttons {
-  display: grid;
-  width: min(100%, 460px);
-  justify-self: center;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.flash-review-buttons button {
-  min-height: 44px;
-  border: 1px solid transparent;
-  border-radius: 14px;
-  color: var(--text);
-  font-weight: 950;
-  box-shadow: 0 10px 24px rgba(2, 11, 45, 0.2);
-  transition: border-color 180ms ease, box-shadow 180ms ease, filter 180ms ease, transform 180ms ease;
-}
-
-.flash-review-buttons .again {
-  border-color: rgba(190, 101, 101, 0.42);
-  background: linear-gradient(135deg, #8a3442, #6c2c37);
-}
-
-.flash-review-buttons .got-it {
-  border-color: rgba(103, 164, 128, 0.47);
-  background: linear-gradient(135deg, #3aa173, #2f7f61);
-}
-
-.flash-review-buttons button:hover,
-.flash-review-buttons button:focus-visible {
-  filter: brightness(1.06);
-  box-shadow: 0 12px 28px rgba(59, 130, 246, 0.18);
-  transform: translateY(-1px);
-}
-
-.flash-review-buttons .again:hover,
-.flash-review-buttons .again:focus-visible {
-  border-color: rgba(222, 139, 139, 0.45);
-}
-
-.flash-review-buttons .got-it:hover,
-.flash-review-buttons .got-it:focus-visible {
-  border-color: rgba(132, 190, 155, 0.52);
 }
 
 .skeleton,
@@ -6656,10 +6543,6 @@ button {
     margin-top: 2px;
   }
 
-  .deck-complete-card {
-    grid-column: 1;
-  }
-
   .quiz-submit-row {
     position: static;
     align-items: stretch;
@@ -6683,11 +6566,6 @@ button {
 
   .quiz-recommended-actions div {
     display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .flash-review-buttons {
-    width: 100%;
     grid-template-columns: 1fr;
   }
 

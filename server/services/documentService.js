@@ -12,7 +12,6 @@ import { PDFParse } from "pdf-parse";
 import Document from "../models/Document.js";
 // The following models hold generated study data linked to documents.
 import Flashcard from "../models/Flashcard.js";
-import FlashcardProgress from "../models/FlashcardProgress.js";
 import FlashcardSet from "../models/FlashcardSet.js";
 import Folder from "../models/Folder.js";
 import MarkedQuestion from "../models/MarkedQuestion.js";
@@ -448,15 +447,6 @@ function normalizeFileName(fileName) {
 
 // Remove all generated study data connected to deleted documents.
 async function deleteDocumentLinkedData(userId, documentIds) {
-  // Progress records point to flashcard set ids, so collect them before deleting sets.
-  const flashcardSets = await FlashcardSet.find({
-    userId,
-    documentId: { $in: documentIds }
-  })
-    .select("_id")
-    .lean();
-  const flashcardSetIds = flashcardSets.map((set) => set._id);
-
   // Delete every dependent collection in parallel.
   await Promise.all([
     Summary.deleteMany({ userId, documentId: { $in: documentIds } }),
@@ -465,10 +455,7 @@ async function deleteDocumentLinkedData(userId, documentIds) {
     QuizAttempt.deleteMany({ userId, documentId: { $in: documentIds } }),
     MarkedQuestion.deleteMany({ userId, documentId: { $in: documentIds } }),
     Flashcard.deleteMany({ userId, documentId: { $in: documentIds } }),
-    FlashcardSet.deleteMany({ userId, documentId: { $in: documentIds } }),
-    flashcardSetIds.length
-      ? FlashcardProgress.deleteMany({ userId, flashcardSetId: { $in: flashcardSetIds } })
-      : Promise.resolve()
+    FlashcardSet.deleteMany({ userId, documentId: { $in: documentIds } })
   ]);
 }
 

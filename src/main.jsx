@@ -5526,7 +5526,7 @@ function QuizResultsPage() {
   );
 }
 
-// Loads flashcard decks, tracks card review progress, and handles deck actions.
+// Loads flashcard decks and handles simple revision deck actions.
 function FlashcardsPage() {
   const params = getHashParams();
   const documentId = params.get("documentId");
@@ -5537,16 +5537,12 @@ function FlashcardsPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
-  const [deckComplete, setDeckComplete] = useState(false);
-  const [savingState, setSavingState] = useState("idle");
   const [deleteState, setDeleteState] = useState({
     status: "idle",
     message: ""
   });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
-  const activeFlashcardSetIdRef = useRef("");
-  activeFlashcardSetIdRef.current = deckData?.flashcardSet?.id || "";
   useAutoDismissStatus(deleteState, setDeleteState);
 
   // Keeps text-generated material available to related study pages.
@@ -5560,20 +5556,7 @@ function FlashcardsPage() {
     );
   }, [deckData?.document?.id, deckData?.document?.fileType]);
 
-  // Clears the saved-progress indicator after it is shown.
-  useEffect(() => {
-    if (savingState !== "saved") {
-      return undefined;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setSavingState((current) => (current === "saved" ? "idle" : current));
-    }, TOAST_DISMISS_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [savingState]);
-
-  // Loads an existing deck and progress for the selected document or set.
+  // Loads an existing deck for the selected document or set.
   useEffect(() => {
     const controller = new AbortController();
 
@@ -5603,9 +5586,8 @@ function FlashcardsPage() {
         }
 
         setDeckData(data);
-        setCurrentIndex(data.progress?.currentCardIndex || 0);
+        setCurrentIndex(0);
         setIsFlipped(false);
-        setDeckComplete(false);
         setStatus("success");
       } catch (requestError) {
         if (requestError.name === "AbortError") {
@@ -5631,7 +5613,6 @@ function FlashcardsPage() {
     try {
       setIsGenerating(true);
       setError("");
-      setSavingState("idle");
       const currentDeck = deckData?.flashcardSet;
       const selectedDocumentIds = currentDeck?.generationType === "selected"
         ? currentDeck.selectedDocumentIds
@@ -5656,8 +5637,6 @@ function FlashcardsPage() {
       setDeckData(data);
       setCurrentIndex(0);
       setIsFlipped(false);
-      setDeckComplete(false);
-      setSavingState("idle");
       setStatus("success");
       window.location.hash = `#flashcards?documentId=${data.document.id}&setId=${data.flashcardSet.id}`;
       window.dispatchEvent(new Event("studymind:dashboard-refresh"));
@@ -5669,91 +5648,17 @@ function FlashcardsPage() {
     }
   }
 
-  // Saves the current card index and rating to the backend.
-  async function saveProgress(nextIndex, rating = "") {
-    if (!deckData?.flashcardSet) {
-      return;
-    }
-
-    const flashcardSetId = deckData.flashcardSet.id;
-
-    try {
-      setSavingState("saving");
-      const response = await fetch(`/api/flashcards/${flashcardSetId}/review`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentCardIndex: nextIndex,
-          cardOrder: currentCard?.order,
-          rating
-        })
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Could not save flashcard progress.");
-      }
-
-      setDeckData((current) => (
-        current?.flashcardSet?.id === flashcardSetId
-          ? { ...current, progress: data.progress }
-          : current
-      ));
-      if (activeFlashcardSetIdRef.current === flashcardSetId) {
-        setSavingState("saved");
-      }
-    } catch (saveError) {
-      if (activeFlashcardSetIdRef.current === flashcardSetId) {
-        setSavingState("error");
-        setError(saveError.message || "Could not save flashcard progress.");
-      }
-    }
-  }
-
-  // Moves between cards while preserving the latest rating when needed.
+  // Moves between cards in a circular revision loop.
   function goToCard(nextIndex) {
     const count = deckData?.flashcardSet?.cards?.length || 0;
 
-    if (nextIndex >= count) {
-      const existingRating = getLatestFlashcardRating(deckData?.progress?.reviewHistory || [], currentCard?.order);
-      setCurrentIndex(count);
-      setDeckComplete(true);
-      setIsFlipped(false);
-      saveProgress(Math.max(0, count - 1), existingRating || "got-it");
+    if (!count) {
       return;
     }
 
-    const safeIndex = Math.min(count - 1, Math.max(0, nextIndex));
-    const existingRating = getLatestFlashcardRating(deckData?.progress?.reviewHistory || [], currentCard?.order);
+    const safeIndex = ((nextIndex % count) + count) % count;
     setCurrentIndex(safeIndex);
-    setDeckComplete(false);
     setIsFlipped(false);
-    saveProgress(safeIndex, nextIndex > currentIndex ? existingRating || "got-it" : "");
-  }
-
-  // Handles Got It or Didn't Know and advances the deck.
-  function handleReview(rating) {
-    const count = deckData?.flashcardSet?.cards?.length || 0;
-    const nextIndex = Math.min(count - 1, currentIndex + 1);
-    saveProgress(nextIndex, rating);
-
-    if (currentIndex < count - 1) {
-      setCurrentIndex(nextIndex);
-      setDeckComplete(false);
-      setIsFlipped(false);
-    } else {
-      setCurrentIndex(count);
-      setDeckComplete(true);
-      setIsFlipped(false);
-    }
-  }
-
-  // Restarts the deck from the first card.
-  function restartDeck() {
-    setCurrentIndex(0);
-    setDeckComplete(false);
-    setIsFlipped(false);
-    saveProgress(0);
   }
 
   // Deletes the current flashcard deck without deleting the source material.
@@ -5776,7 +5681,6 @@ function FlashcardsPage() {
       setDeckData((current) => ({
         ...current,
         flashcardSet: null,
-        progress: null,
         meta: {
           ...current.meta,
           hasFlashcards: false,
@@ -5785,8 +5689,6 @@ function FlashcardsPage() {
       }));
       setCurrentIndex(0);
       setIsFlipped(false);
-      setDeckComplete(false);
-      setSavingState("idle");
       setDeleteConfirmOpen(false);
       setDeleteState({ status: "success", message: data.message || "Flashcards deleted successfully." });
       window.dispatchEvent(new Event("studymind:dashboard-refresh"));
@@ -5796,12 +5698,11 @@ function FlashcardsPage() {
     }
   }
 
-  // Calculates visible flashcard progress from cards and review history.
+  // Calculates visible flashcard position for the revision deck.
   const deck = deckData?.flashcardSet;
   const cards = deck?.cards || [];
   const currentCard = cards[currentIndex];
-  const completionStats = buildDeckCompletionStats(cards.length, deckData?.progress?.reviewHistory || []);
-  const displayedProgressIndex = deckComplete ? cards.length : Math.min(currentIndex + 1, cards.length);
+  const displayedProgressIndex = Math.min(currentIndex + 1, cards.length);
   const progressPercent = cards.length ? Math.round((displayedProgressIndex / cards.length) * 100) : 0;
 
   if (status === "loading") {
@@ -5809,7 +5710,7 @@ function FlashcardsPage() {
       <>
         <LoadingBanner
           title="Loading AI flashcards"
-          detail="Fetching your deck and review progress."
+          detail="Fetching your revision deck."
         />
         <FlashcardsSkeleton />
       </>
@@ -5897,7 +5798,7 @@ function FlashcardsPage() {
         </section>
       )}
 
-      {deck && (currentCard || deckComplete) && (
+      {deck && currentCard && (
         <>
           <section className="flashcards-info">
             <div>
@@ -5910,77 +5811,53 @@ function FlashcardsPage() {
             </div>
             <div>
               <span>Progress</span>
-              <strong>{deckComplete ? "Complete" : `${currentIndex + 1}/${cards.length}`}</strong>
+              <strong>{`Card ${currentIndex + 1} of ${cards.length}`}</strong>
             </div>
             <div>
               <span>Status</span>
-              <strong>{savingState === "saving" ? "Saving..." : savingState === "error" ? "Save failed" : "Saved"}</strong>
+              <strong>Revision Deck</strong>
             </div>
           </section>
 
-          {savingState === "saving" && (
-            <LoadingBanner
-              compact
-              title="Saving progress"
-              detail="Recording your flashcard review."
-            />
-          )}
-
           <section className="flashcard-study-area">
-            {deckComplete ? (
-              <DeckCompleteCard
-                documentId={deckData?.document?.id || deck.documentId || documentId}
-                onRestart={restartDeck}
-                stats={completionStats}
-              />
-            ) : (
-              <>
-                <button
-                  aria-label="Previous card"
-                  className="flash-nav-button previous"
-                  type="button"
-                  onClick={() => goToCard(currentIndex - 1)}
-                  disabled={currentIndex === 0 || isGenerating}
-                >
-                  <ChevronLeft aria-hidden="true" size={24} strokeWidth={2.4} />
-                </button>
+            <button
+              aria-label="Previous card"
+              className="flash-nav-button previous"
+              type="button"
+              onClick={() => goToCard(currentIndex - 1)}
+              disabled={isGenerating}
+            >
+              <ChevronLeft aria-hidden="true" size={24} strokeWidth={2.4} />
+            </button>
 
-                <button className={`flashcard-stage ${isFlipped ? "flipped" : ""}`} type="button" onClick={() => setIsFlipped((value) => !value)}>
-                  <div className="flashcard-face flashcard-front">
-                    <h2>{currentCard.front}</h2>
-                    <em>{currentCard.topic || deck.topic}</em>
-                    <span>Tap for answer</span>
-                  </div>
-                  <div className="flashcard-face flashcard-back">
-                    <h2>{currentCard.back}</h2>
-                    <em>{capitalize(currentCard.difficulty || "medium")}</em>
-                    <span>Tap to return</span>
-                  </div>
-                </button>
+            <button className={`flashcard-stage ${isFlipped ? "flipped" : ""}`} type="button" onClick={() => setIsFlipped((value) => !value)}>
+              <div className="flashcard-face flashcard-front">
+                <h2>{currentCard.front}</h2>
+                <em>{currentCard.topic || deck.topic}</em>
+                <span>Tap for answer</span>
+              </div>
+              <div className="flashcard-face flashcard-back">
+                <h2>{currentCard.back}</h2>
+                <em>{capitalize(currentCard.difficulty || "medium")}</em>
+                <span>Tap to return</span>
+              </div>
+            </button>
 
-                <button
-                  aria-label="Next card"
-                  className="flash-nav-button next"
-                  type="button"
-                  onClick={() => goToCard(currentIndex + 1)}
-                  disabled={isGenerating}
-                >
-                  <ChevronRight aria-hidden="true" size={24} strokeWidth={2.4} />
-                </button>
-              </>
-            )}
+            <button
+              aria-label="Next card"
+              className="flash-nav-button next"
+              type="button"
+              onClick={() => goToCard(currentIndex + 1)}
+              disabled={isGenerating}
+            >
+              <ChevronRight aria-hidden="true" size={24} strokeWidth={2.4} />
+            </button>
           </section>
 
           <section className="flashcard-controls">
             <div className="flash-progress">
               <span style={{ width: `${progressPercent}%` }} />
             </div>
-            {!deckComplete && (
-              <div className="flash-review-buttons">
-                <button className="again" type="button" onClick={() => handleReview("again")}>Didn&apos;t Know</button>
-                <button className="got-it" type="button" onClick={() => handleReview("got-it")}>Got It</button>
-              </div>
-            )}
           </section>
         </>
       )}
@@ -6000,7 +5877,7 @@ function FlashcardsPage() {
   );
 }
 
-// Flashcard help modal that explains the review controls.
+// Flashcard help modal that explains the revision controls.
 function FlashcardGuideModal({ onClose }) {
   // Lets Escape close the flashcard guide.
   useEffect(() => {
@@ -6020,20 +5897,16 @@ function FlashcardGuideModal({ onClose }) {
       text: "Tap anywhere on the card to know the answer."
     },
     {
-      title: "Got It",
-      text: "Mark it if you understand the concept well."
+      title: "Next and Previous",
+      text: "Use the arrows to move through the deck at your own pace."
     },
     {
-      title: "Didn't Know",
-      text: "Mark it if you need more revision on this topic."
+      title: "Loop the Deck",
+      text: "Next from the last card returns to the first card, and Previous from the first card returns to the last card."
     },
     {
-      title: "Track your mastery",
-      text: "Your responses help us calculate your mastery score."
-    },
-    {
-      title: "Get smart recommendations",
-      text: "At the end, we'll recommend whether you're ready for the quiz or should review more."
+      title: "Revise Freely",
+      text: "Keep cycling through cards until the concepts feel clear."
     }
   ];
 
@@ -6069,127 +5942,11 @@ function FlashcardGuideModal({ onClose }) {
           ))}
         </div>
         <div className="flashcard-guide-actions">
-          <button type="button" onClick={onClose}>Got it</button>
+          <button type="button" onClick={onClose}>Close</button>
         </div>
       </section>
     </div>
   );
-}
-
-// Shows deck completion stats and next recommended study action.
-function DeckCompleteCard({ documentId, onRestart, stats }) {
-  const summaryHref = `#summary?documentId=${documentId || ""}`;
-  const quizHref = `#quizzes?documentId=${documentId || ""}`;
-  const insightParts = getDeckCompletionInsight(stats.status);
-
-  return (
-    <article className={`deck-complete-card ${stats.status}`}>
-      <h2>🎉 Deck Complete</h2>
-      <strong>Mastery Score: {stats.mastery}%</strong>
-      <span className="deck-readiness">{getDeckReadinessLabel(stats.status)}</span>
-      <div className="deck-rating-counts" aria-label="Flashcard rating counts">
-        <span>✅ Got It: {stats.gotIt}</span>
-        <span>❌ Didn&apos;t Know: {stats.didntKnow}</span>
-      </div>
-      <p>
-        {insightParts.beforeSummary}
-        {insightParts.includeLinks && <a href={summaryHref}>AI Summary</a>}
-        {insightParts.betweenLinks}
-        {insightParts.includeLinks && <a href={summaryHref}>AI Tutor</a>}
-        {insightParts.afterTutor}
-      </p>
-      <div className="deck-complete-actions">
-        <a className="summary-primary-action" href={quizHref}>Start Quiz</a>
-        <button className="summary-primary-action secondary" type="button" onClick={onRestart}>Restart Deck</button>
-      </div>
-    </article>
-  );
-}
-
-// Calculates mastered, learning, and readiness stats from flashcard history.
-function buildDeckCompletionStats(cardCount, reviewHistory = []) {
-  const latestRatings = new Map();
-
-  reviewHistory.forEach((item) => {
-    const cardOrder = Number(item.cardOrder);
-
-    if (Number.isFinite(cardOrder) && cardOrder >= 1 && cardOrder <= cardCount && item.rating) {
-      latestRatings.set(cardOrder, item.rating);
-    }
-  });
-
-  const ratings = Array.from({ length: cardCount }, (_, index) => latestRatings.get(index + 1) || "got-it");
-  const gotIt = ratings.filter((rating) => rating !== "again").length;
-  const didntKnow = ratings.filter((rating) => rating === "again").length;
-  const mastery = cardCount ? Math.round((gotIt / cardCount) * 100) : 0;
-  const status = mastery >= 80 ? "high" : mastery >= 60 ? "medium" : "low";
-
-  return {
-    gotIt,
-    didntKnow,
-    mastery,
-    status
-  };
-}
-
-// Finds the most recent rating for one flashcard order.
-function getLatestFlashcardRating(reviewHistory = [], cardOrder) {
-  const targetOrder = Number(cardOrder);
-
-  if (!Number.isFinite(targetOrder)) {
-    return "";
-  }
-
-  for (let index = reviewHistory.length - 1; index >= 0; index -= 1) {
-    const item = reviewHistory[index];
-
-    if (Number(item.cardOrder) === targetOrder && item.rating) {
-      return item.rating;
-    }
-  }
-
-  return "";
-}
-
-// Converts readiness status into a short learner-facing label.
-function getDeckReadinessLabel(status) {
-  if (status === "high") {
-    return "Quiz Ready";
-  }
-
-  if (status === "medium") {
-    return "Needs Quick Review";
-  }
-
-  return "More Review Recommended";
-}
-
-// Gives the learner a next-step recommendation after a deck is completed.
-function getDeckCompletionInsight(status) {
-  if (status === "high") {
-    return {
-      beforeSummary: "Excellent work. You appear ready to test your knowledge.",
-      betweenLinks: "",
-      afterTutor: "",
-      includeLinks: false
-    };
-  }
-
-  if (status === "medium") {
-    return {
-      beforeSummary: "You understand most concepts, but a few areas may need reinforcement. Consider revisiting the ",
-      betweenLinks: " or asking the ",
-      afterTutor: " about any remaining doubts before taking the quiz.",
-      includeLinks: true
-    };
-  }
-
-  return {
-    beforeSummary: "Several concepts were marked as 'Didn't Know'. Review the ",
-    betweenLinks: " and clear any doubts with the ",
-    afterTutor: " before attempting the quiz.",
-    includeLinks: true
-  };
 }
 
 // Main dashboard content made from backend stats, progress, and recommendations.
@@ -6429,7 +6186,7 @@ function GoalDropdown({ className = "", disabled = false, label, options, placeh
   }
 
   return (
-    <div className={`goal-dropdown ${className}`} ref={dropdownRef}>
+    <div className={`goal-dropdown ${className}${isOpen ? " is-open" : ""}`} ref={dropdownRef}>
       <button
         className="goal-dropdown-trigger"
         type="button"
@@ -7407,12 +7164,11 @@ function cleanTopicTitle(title, index = 0, sectionText = "") {
 
 // Builds final summary sections for short, medium, or detailed display.
 function buildSummaryDisplaySections(text, length) {
-  const sections = splitSummaryIntoSections(text, length);
-
   if (length === "detailed") {
-    return ensureOverviewFirst(sections);
+    return buildDetailedSummaryDisplaySections(text);
   }
 
+  const sections = splitSummaryIntoSections(text, length);
   const compactSections = sections
     .map((section) => ({
       ...section,
@@ -7432,6 +7188,288 @@ function buildSummaryDisplaySections(text, length) {
     expandCompactSummarySections(compactSections, targetCount),
     maximumCount
   );
+}
+
+// Builds detailed cards from real headings first, then content-based chunks.
+function buildDetailedSummaryDisplaySections(text) {
+  const detailedSections = parseDetailedSummarySections(text);
+  const sections = detailedSections.length ? detailedSections : splitSummaryIntoSections(text, "detailed");
+
+  return splitOversizedDetailedSections(ensureOverviewFirst(sections));
+}
+
+// Finds detailed headings even when AI places "Heading: text" inline.
+function parseDetailedSummarySections(text) {
+  const cleanText = stripMarkdownArtifacts(text)
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  if (!cleanText) {
+    return [];
+  }
+
+  const inlineSections = parseInlineDetailedHeadingSections(cleanText);
+
+  if (inlineSections.length > 1) {
+    return inlineSections;
+  }
+
+  const lineSections = parseLineDetailedHeadingSections(cleanText);
+
+  if (lineSections.length > 1) {
+    return lineSections;
+  }
+
+  return parseTopicSections(cleanText);
+}
+
+// Splits text at heading markers such as "Indexing: paragraph".
+function parseInlineDetailedHeadingSections(text) {
+  const headingPattern = /(^|\n|(?<=[.!?])\s+)\s*(?:\d+[\).:-]\s*)?([A-Z][A-Za-z0-9/&+() -]{2,88}?):\s*/g;
+  const matches = [...text.matchAll(headingPattern)]
+    .filter((match) => isDetailedHeadingCandidate(match[2]));
+
+  if (!matches.length) {
+    return [];
+  }
+
+  const sections = [];
+  const prefix = cleanDisplaySentence(text.slice(0, matches[0].index));
+
+  if (prefix) {
+    sections.push({
+      title: "Overview",
+      text: prefix
+    });
+  }
+
+  matches.forEach((match, index) => {
+    const nextMatch = matches[index + 1];
+    const contentStart = match.index + match[0].length;
+    const contentEnd = nextMatch ? nextMatch.index : text.length;
+    const sectionText = cleanDisplaySentence(text.slice(contentStart, contentEnd));
+
+    if (sectionText) {
+      sections.push({
+        title: cleanTopicTitle(match[2], index, sectionText),
+        text: sectionText
+      });
+    }
+  });
+
+  return sections;
+}
+
+// Splits text where heading-style lines appear above paragraphs.
+function parseLineDetailedHeadingSections(text) {
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const sections = [];
+  let current = null;
+
+  lines.forEach((line, index) => {
+    const numberedHeading = line.match(/^\s*\d+[\).:-]\s+(.+)$/);
+    const rawHeading = numberedHeading?.[1] || line;
+
+    if (isDetailedHeadingCandidate(rawHeading) && index < lines.length - 1) {
+      if (current?.text.length) {
+        sections.push({
+          title: current.title,
+          text: cleanDisplaySentence(current.text.join(" "))
+        });
+      }
+
+      current = {
+        title: cleanTopicTitle(rawHeading, sections.length),
+        text: []
+      };
+      return;
+    }
+
+    if (!current) {
+      current = {
+        title: sections.length ? inferDetailedHeadingFromText(line, sections.length) : "Overview",
+        text: []
+      };
+    }
+
+    current.text.push(line);
+  });
+
+  if (current?.text.length) {
+    sections.push({
+      title: current.title,
+      text: cleanDisplaySentence(current.text.join(" "))
+    });
+  }
+
+  return sections.filter((section) => section.text);
+}
+
+// Checks whether a short phrase can safely act as a detailed card heading.
+function isDetailedHeadingCandidate(value) {
+  const cleaned = stripMarkdownArtifacts(value)
+    .replace(/^\s*\d+[\).:-]\s*/, "")
+    .replace(/[.;:,!?]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const wordCount = cleaned.split(/\s+/).filter(Boolean).length;
+
+  if (!cleaned || wordCount > 10 || isBadSummaryHeading(cleaned)) {
+    return false;
+  }
+
+  if (/^(summary|detailed summary|part\s+\d+)$/i.test(cleaned)) {
+    return false;
+  }
+
+  return /^[A-Z0-9]/.test(cleaned) && !/[.!?]/.test(cleaned);
+}
+
+// Breaks long detailed sections into smaller cards without removing text.
+function splitOversizedDetailedSections(sections) {
+  return sections.flatMap((section, sectionIndex) => {
+    const baseTitle = cleanTopicTitle(section.title, sectionIndex, section.text);
+    const chunks = splitLongDetailedSection(section, baseTitle);
+
+    return chunks.map((chunk, chunkIndex) => {
+      const inferredTitle = chunk.title || inferDetailedHeadingFromText(chunk.text, sectionIndex + chunkIndex);
+      const title = chooseDetailedChunkTitle(baseTitle, inferredTitle, chunkIndex);
+
+      return {
+        title,
+        text: chunk.text
+      };
+    });
+  });
+}
+
+// Splits one detailed section, preserving real headings inside the section.
+function splitLongDetailedSection(section, baseTitle) {
+  const nestedSections = parseInlineDetailedHeadingSections(section.text);
+
+  if (nestedSections.length > 1) {
+    return nestedSections;
+  }
+
+  return splitDetailedSectionText(section.text).map((chunk, index) => ({
+    title: index === 0 ? baseTitle : "",
+    text: chunk
+  }));
+}
+
+// Uses paragraphs first, then sentence groups, so detailed cards stay readable.
+function splitDetailedSectionText(text) {
+  const cleaned = stripMarkdownArtifacts(text);
+  const paragraphs = cleaned
+    .split(/\n{2,}|\n(?=[A-Z][A-Za-z0-9 ()/-]{2,80}:?\s*$)/)
+    .map(cleanDisplaySentence)
+    .filter(Boolean);
+  const sourceParts = paragraphs.length ? paragraphs : [cleaned].filter(Boolean);
+  const maxWords = 90;
+  const chunks = [];
+
+  sourceParts.forEach((part) => {
+    const words = part.split(/\s+/).filter(Boolean);
+
+    if (words.length <= maxWords) {
+      chunks.push(part);
+      return;
+    }
+
+    const sentences = splitCompactSummarySentences(part);
+    let current = "";
+
+    sentences.forEach((sentence) => {
+      const candidate = [current, sentence].filter(Boolean).join(" ");
+
+      if (candidate.split(/\s+/).length > maxWords && current) {
+        chunks.push(current);
+        current = sentence;
+      } else {
+        current = candidate;
+      }
+    });
+
+    if (current) {
+      chunks.push(current);
+    }
+  });
+
+  return chunks.length ? chunks : [cleaned].filter(Boolean);
+}
+
+// Chooses a heading from the current chunk, only using continuation when it truly fits.
+function chooseDetailedChunkTitle(baseTitle, inferredTitle, chunkIndex) {
+  const base = cleanDetailedCardTitle(cleanTopicTitle(baseTitle, chunkIndex));
+  const inferred = cleanDetailedCardTitle(cleanTopicTitle(inferredTitle, chunkIndex));
+
+  if (chunkIndex === 0) {
+    return base;
+  }
+
+  if (inferred && inferred.toLowerCase() !== base.toLowerCase() && !isBadSummaryHeading(inferred)) {
+    return inferred;
+  }
+
+  return `${base} - Continued`;
+}
+
+// Removes stale excessive part labels from old or badly split summaries.
+function cleanDetailedCardTitle(title) {
+  return String(title || "")
+    .replace(/\s+-\s+Part\s+\d+$/i, "")
+    .replace(/^Part\s+\d+$/i, "Document Topic")
+    .trim();
+}
+
+// Creates a meaningful detailed heading from the current card's own text.
+function inferDetailedHeadingFromText(text, index = 0) {
+  const cleaned = cleanDisplaySentence(text);
+  const leadingHeading = cleaned.match(/^([^:]{3,90}):\s+(.+)$/);
+
+  if (leadingHeading && isDetailedHeadingCandidate(leadingHeading[1])) {
+    return cleanTopicTitle(leadingHeading[1], index, leadingHeading[2]);
+  }
+
+  const concept = findDetailedConceptPhrase(cleaned);
+
+  if (concept) {
+    return cleanTopicTitle(concept, index, cleaned);
+  }
+
+  return buildTopicTitle(cleaned, index);
+}
+
+// Detects common DBMS/CSE concepts for detailed card headings.
+function findDetailedConceptPhrase(text) {
+  const conceptPatterns = [
+    /\bindexing for performance optimization\b/i,
+    /\bB[-+ ]?tree and hash indexes?\b/i,
+    /\bB\+?\s*tree indexes?\b/i,
+    /\bhash indexes?\b/i,
+    /\bentity[- ]relationship(?:\s+ER)? model\b/i,
+    /\battributes? and relationships?\b/i,
+    /\bprimary keys?\b/i,
+    /\bforeign keys?\b/i,
+    /\bkeys?\b/i,
+    /\bnormalization\b/i,
+    /\btransactions?\b/i,
+    /\bACID properties?\b/i,
+    /\bSQL sublanguages?\b/i,
+    /\bdata models?\b/i,
+    /\bdatabase architecture\b/i
+  ];
+
+  for (const pattern of conceptPatterns) {
+    const match = String(text || "").match(pattern);
+
+    if (match) {
+      return match[0];
+    }
+  }
+
+  return "";
 }
 
 // Makes sure summary cards start with an overview section.

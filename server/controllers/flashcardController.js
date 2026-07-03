@@ -1,11 +1,9 @@
 // Import flashcard service functions so this controller only handles HTTP details.
-// The service handles MongoDB ownership checks, AI generation, and progress updates.
+// The service handles MongoDB ownership checks and AI generation.
 import {
   deleteFlashcardSetForUser,
   generateFlashcardsForUser,
-  getFlashcardProgressForUser,
-  getFlashcardsForUser,
-  saveFlashcardReviewForUser
+  getFlashcardsForUser
 } from "../services/flashcardService.js";
 
 // Called when the Flashcards page loads.
@@ -39,36 +37,8 @@ export async function generateFlashcards(req, res, next) {
   }
 }
 
-// Called when the learner rates a card as again or got-it.
-// This updates progress for the selected flashcard deck.
-export async function saveFlashcardReview(req, res, next) {
-  try {
-    // Save the review only after the service confirms the deck belongs to req.user.
-    const progress = await saveFlashcardReviewForUser(req.user, req.params.id, req.body);
-    // Return updated progress so React can update the current card and mastery state.
-    res.json(progress);
-  } catch (error) {
-    // Send errors to the global error handler in server.js.
-    next(error);
-  }
-}
-
-// Called when React needs saved progress for a deck.
-// This is useful after refresh or when reopening flashcards later.
-export async function getFlashcardProgress(req, res, next) {
-  try {
-    // Load progress for this deck only if the deck belongs to the logged-in user.
-    const progress = await getFlashcardProgressForUser(req.user, req.params.id);
-    // Return updated progress so React can update the current card and mastery state.
-    res.json(progress);
-  } catch (error) {
-    // Send errors to the global error handler in server.js.
-    next(error);
-  }
-}
-
 // Called when the user deletes a flashcard deck.
-// The service removes the deck and related progress records.
+// The service removes the generated deck.
 export async function deleteFlashcardSet(req, res, next) {
   try {
     // Delete the deck only after the service checks user ownership.
