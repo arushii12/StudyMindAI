@@ -253,7 +253,6 @@ For production-grade uploads, move PDF storage to a durable service such as:
 - Add spaced-repetition scheduling for flashcards.
 - Add richer analytics for weak topics and long-term performance.
 - Add streaming AI responses for the tutor experience.
-- Add code splitting to reduce the production JavaScript bundle size.
 
 ## Author
 
